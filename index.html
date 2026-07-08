@@ -712,11 +712,14 @@ function renderSeasonSummary(){
 }
 
 // ================= RENDER: ADD GAME =================
+let editingGameId = null;
 function renderGame(){
   const el = document.getElementById('tab-game');
+  const editGame = editingGameId ? data.games.find(g=>g.id===editingGameId) : null;
   el.innerHTML = `
     <div class="card">
-      <h2>Внести игру</h2>
+      <h2>${editGame ? 'Редактирование игры' : 'Внести игру'}</h2>
+      ${editGame ? `<div class="goal-box" style="margin-bottom:12px;">✎ Редактируешь игру от ${editGame.date}. <button class="ghost" id="cancel-edit" type="button" style="margin-left:8px;">Отменить редактирование</button></div>` : ''}
       <div class="row">
         <div class="field"><label class="f">Дата</label><input type="date" id="g-date"></div>
         <div class="field"><label class="f">Соперник</label><input id="g-opp" placeholder="Название команды"></div>
@@ -779,34 +782,82 @@ function renderGame(){
 
       ${getRosterNames().length>0 ? `
       <fieldset class="stat-fieldset"><legend>Протокол матча — кто ещё забил и отдал</legend>
-        <div id="scoresheet"></div>
+        <div id="scoresheet-list"></div>
+        <div class="row" style="align-items:center; margin-top:6px;">
+          <select id="sh-player" style="flex:2;">${getRosterNames().map(n=>`<option value="${n}">${n}</option>`).join('')}</select>
+          <select id="sh-action" style="flex:1;">
+            <option value="goals">Гол</option>
+            <option value="assists">Передача</option>
+            <option value="plusMinusPlus">+</option>
+            <option value="plusMinusMinus">−</option>
+            <option value="penalties">Штраф</option>
+          </select>
+          <input id="sh-count" type="number" min="1" value="1" style="max-width:70px;">
+          <button class="ghost" id="sh-add" type="button">+ Добавить</button>
+        </div>
       </fieldset>` : `<p class="muted stat-fieldset">Добавь состав в «Моей команде», чтобы отмечать статы одноклубников.</p>`}
 
-      <button class="primary" id="save-game">Сохранить игру и обновить рейтинг</button>
+      <button class="primary" id="save-game">${editGame ? 'Сохранить изменения' : 'Сохранить игру и обновить рейтинг'}</button>
     </div>
     <div id="game-history"></div>
   `;
-  document.getElementById('g-date').valueAsDate = new Date();
+  if(editGame){
+    document.getElementById('g-date').value = editGame.date;
+    document.getElementById('g-opp').value = editGame.opponent;
+    Object.entries(editGame.raw||{}).forEach(([k,v])=>{
+      const f = document.getElementById('f-'+k);
+      if(f) f.value = v;
+    });
+    const cancelBtn = document.getElementById('cancel-edit');
+    if(cancelBtn) cancelBtn.onclick = ()=>{ editingGameId = null; renderGame(); };
+  } else {
+    document.getElementById('g-date').valueAsDate = new Date();
+  }
   document.getElementById('g-missed').onchange = (e)=>{
     document.querySelectorAll('.stat-fieldset').forEach(f=> f.style.display = e.target.checked ? 'none' : '');
   };
 
-  const teammateFields = ['goals','assists','plusMinus','penalties'];
-  const teammateLabels = {goals:'Г', assists:'П', plusMinus:'+/-', penalties:'Штр'};
-  const scoresheet = {};
-  getRosterNames().forEach(name=> scoresheet[name] = {goals:0, assists:0, plusMinus:0, penalties:0});
-  const sheetEl = document.getElementById('scoresheet');
-  function renderSheet(){
-    if(!sheetEl) return;
-    sheetEl.innerHTML = Object.entries(scoresheet).map(([name,s])=>`
-      <div class="row" style="align-items:center;">
-        <span style="flex:2; font-size:13px;">${name}</span>
-        ${teammateFields.map(f=>`<div class="stat-counter"><button data-sh-dec="${name}|${f}">−</button><span>${teammateLabels[f]} ${s[f]}</span><button data-sh-inc="${name}|${f}">+</button></div>`).join('')}
-      </div>`).join('');
-    sheetEl.querySelectorAll('[data-sh-inc]').forEach(b=>b.onclick=()=>{ const [n,k]=b.dataset.shInc.split('|'); scoresheet[n][k]++; renderSheet(); });
-    sheetEl.querySelectorAll('[data-sh-dec]').forEach(b=>b.onclick=()=>{ const [n,k]=b.dataset.shDec.split('|'); scoresheet[n][k]--; renderSheet(); });
+  const ACTION_LABELS = {goals:'Гол', assists:'Передача', plusMinusPlus:'+', plusMinusMinus:'−', penalties:'Штраф'};
+  let sheetEntries = editGame && editGame.scoresheet ? editGame.scoresheet.flatMap(([name,s])=>{
+    const entries = [];
+    if(s.goals) entries.push({name, action:'goals', count:s.goals});
+    if(s.assists) entries.push({name, action:'assists', count:s.assists});
+    if(s.plusMinus>0) entries.push({name, action:'plusMinusPlus', count:s.plusMinus});
+    if(s.plusMinus<0) entries.push({name, action:'plusMinusMinus', count:-s.plusMinus});
+    if(s.penalties) entries.push({name, action:'penalties', count:s.penalties});
+    return entries;
+  }) : []; // {name, action, count}
+  const sheetListEl = document.getElementById('scoresheet-list');
+  function renderSheetList(){
+    if(!sheetListEl) return;
+    if(sheetEntries.length===0){ sheetListEl.innerHTML = '<p class="empty">Пока ничего не добавлено</p>'; return; }
+    sheetListEl.innerHTML = '<ul class="list">' + sheetEntries.map((e,i)=>`
+      <li><span>${e.name} — ${ACTION_LABELS[e.action]} ×${e.count}</span><button class="icon-btn" data-sh-remove="${i}">✕</button></li>
+    `).join('') + '</ul>';
+    sheetListEl.querySelectorAll('[data-sh-remove]').forEach(b=>b.onclick=()=>{
+      sheetEntries.splice(parseInt(b.dataset.shRemove), 1);
+      renderSheetList();
+    });
   }
-  renderSheet();
+  renderSheetList();
+  const shAddBtn = document.getElementById('sh-add');
+  if(shAddBtn) shAddBtn.onclick = ()=>{
+    const name = document.getElementById('sh-player').value;
+    const action = document.getElementById('sh-action').value;
+    const count = parseInt(document.getElementById('sh-count').value)||1;
+    sheetEntries.push({name, action, count});
+    renderSheetList();
+  };
+  function buildScoresheetFromEntries(){
+    const agg = {};
+    sheetEntries.forEach(e=>{
+      if(!agg[e.name]) agg[e.name] = {goals:0, assists:0, plusMinus:0, penalties:0};
+      if(e.action==='plusMinusPlus') agg[e.name].plusMinus += e.count;
+      else if(e.action==='plusMinusMinus') agg[e.name].plusMinus -= e.count;
+      else agg[e.name][e.action] += e.count;
+    });
+    return agg;
+  }
 
   document.getElementById('save-game').onclick = ()=>{
     const date = document.getElementById('g-date').value || todayStr();
@@ -836,7 +887,6 @@ function renderGame(){
         xp += SUBJECTIVE_FIELDS.has(fieldKey) ? (v-5)*weight : v*weight;
       });
       xpGained[attrKey] = xp;
-      applyXp(attrKey, xp);
     });
 
     // Derived penalty: shots on target that did NOT become a goal — the honest fix
@@ -844,27 +894,48 @@ function renderGame(){
     const unconverted = Math.max(0, raw.shotsOnTarget - raw.goals);
     const conversionPenalty = -unconverted * SHOT_CONVERSION_PENALTY;
     xpGained.shooting += conversionPenalty;
-    applyXp('shooting', conversionPenalty);
+
+    let editedGame = null;
+    if(editingGameId){
+      editedGame = data.games.find(g=>g.id===editingGameId);
+      if(editedGame && !editedGame.missed && editedGame.xpGained){
+        // reverse the old effects before applying the new ones
+        Object.entries(editedGame.xpGained).forEach(([attr,xp])=> applyXp(attr, -xp));
+        if(editedGame.hotStreakBonusAwarded) Object.keys(data.player.attributes).forEach(k=>applyXp(k, -HOT_STREAK_BONUS));
+      }
+    }
+    Object.entries(xpGained).forEach(([attr,xp])=> applyXp(attr, xp));
 
     const totalXp = Object.values(xpGained).reduce((s,v)=>s+v,0);
     const matchRating = Math.max(1, Math.min(10, MATCH_RATING_BASE + totalXp*MATCH_RATING_SCALE));
 
     recordOvrSnapshot(date);
-    const scoresheetEntry = Object.entries(scoresheet).filter(([n,s])=>s.goals||s.assists||s.plusMinus||s.penalties);
-    data.games.push({id:uid(), date, opponent, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry});
-    data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+    const scoresheetEntry = Object.entries(buildScoresheetFromEntries());
 
     // hot-streak bonus: every HOT_STREAK_LEN consecutive played games rated >= threshold
-    const played = data.games.filter(g=>!g.missed);
+    // (computed against the games list as it will look AFTER this save)
+    const futureGames = editedGame
+      ? data.games.map(g=> g.id===editingGameId ? {...g, missed:false, matchRating} : g)
+      : [...data.games, {missed:false, matchRating}];
+    const played = futureGames.filter(g=>!g.missed);
     let streakLen = 0;
     for(let i=played.length-1; i>=0; i--){
       if(played[i].matchRating >= HOT_STREAK_THRESHOLD) streakLen++; else break;
     }
-    let bonusMsg = '';
+    let bonusMsg = '', hotStreakBonusAwarded = false;
     if(streakLen>0 && streakLen % HOT_STREAK_LEN === 0){
       Object.keys(data.player.attributes).forEach(k=>applyXp(k, HOT_STREAK_BONUS));
       bonusMsg = `\n🔥 Серия из ${streakLen} игр с оценкой ≥${HOT_STREAK_THRESHOLD} — бонус +${HOT_STREAK_BONUS} XP во все навыки!`;
+      hotStreakBonusAwarded = true;
     }
+
+    if(editedGame){
+      Object.assign(editedGame, {date, opponent, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
+    } else {
+      data.games.push({id:uid(), date, opponent, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
+    }
+    data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+    editingGameId = null;
 
     saveData();
     renderPlayer();
@@ -877,7 +948,7 @@ function renderGame(){
 function renderGameHistory(){
   const wrap = document.getElementById('game-history');
   if(data.games.length===0){ wrap.innerHTML=''; return; }
-  const rows = [...data.games].reverse().slice(0,20).map(g=>{
+  const rows = [...data.games].reverse().slice(0,5).map(g=>{
     if(g.missed){
       return `<li><span>${g.date} · ${g.opponent}<br><span class="muted">🩹 пропущено — травма/болезнь</span></span><span class="pill">не считается</span></li>`;
     }
@@ -889,7 +960,7 @@ function renderGameHistory(){
     const sheet = (g.scoresheet||[]).map(([n,s])=>`${n}: ${s.goals}Г ${s.assists}П ${s.plusMinus>=0?'+':''}${s.plusMinus} ${s.penalties}Штр`).join(', ');
     return `<li><span>${g.date} · ${g.opponent}<br><span class="muted">${chips}</span>${sheet?`<br><span class="muted">${sheet}</span>`:''}</span><span class="pill">Оценка ${g.matchRating.toFixed(1)}</span></li>`;
   }).join('');
-  wrap.innerHTML = `<div class="card"><h2>Последние игры</h2><ul class="list">${rows}</ul></div>`;
+  wrap.innerHTML = `<div class="card"><h2>Последние 5 игр</h2><ul class="list">${rows}</ul><p class="muted" style="margin-top:8px;">Полная статистика и редактирование — во вкладке «Матчи».</p></div>`;
 }
 
 // ================= RENDER: MATCHES (sortable full list) =================
@@ -918,10 +989,10 @@ function renderMatches(){
       <p class="muted">Нажми на заголовок столбца, чтобы отсортировать по возрастанию/убыванию.</p>
       <div class="chart-wrap">
         <table>
-          <thead><tr>${cols.map(c=>`<th data-sort="${c.key}" style="cursor:pointer;">${c.label}${matchesSortState.key===c.key?(matchesSortState.dir==='asc'?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
+          <thead><tr>${cols.map(c=>`<th data-sort="${c.key}" style="cursor:pointer;">${c.label}${matchesSortState.key===c.key?(matchesSortState.dir==='asc'?' ▲':' ▼'):''}</th>`).join('')}<th>Действия</th></tr></thead>
           <tbody>
-            ${sorted.length===0 ? `<tr><td colspan="${cols.length}" class="empty">Пока нет матчей</td></tr>` : sorted.map(g=>{
-              if(g.missed) return `<tr><td>${g.date}</td><td>${g.opponent}</td><td colspan="${cols.length-2}" class="muted">🩹 пропущено</td></tr>`;
+            ${sorted.length===0 ? `<tr><td colspan="${cols.length+1}" class="empty">Пока нет матчей</td></tr>` : sorted.map(g=>{
+              if(g.missed) return `<tr><td>${g.date}</td><td>${g.opponent}</td><td colspan="${cols.length-2}" class="muted">🩹 пропущено</td><td><button class="icon-btn" data-del-game="${g.id}">✕</button></td></tr>`;
               return `<tr>
                 <td>${g.date}</td><td>${g.opponent}</td>
                 <td><span class="pill">${g.matchRating.toFixed(1)}</span></td>
@@ -929,6 +1000,7 @@ function renderMatches(){
                   const v=g.xpGained[k]||0;
                   return `<td style="color:${v>=0?'var(--pos)':'var(--neg)'}">${v>=0?'+':''}${v.toFixed(1)}</td>`;
                 }).join('')}
+                <td><button class="icon-btn" data-edit-game="${g.id}">✎</button> <button class="icon-btn" data-del-game="${g.id}">✕</button></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -942,6 +1014,33 @@ function renderMatches(){
     else matchesSortState = {key, dir:'desc'};
     renderMatches();
   });
+  el.querySelectorAll('[data-edit-game]').forEach(b=>b.onclick=()=>{
+    editingGameId = b.dataset.editGame;
+    document.querySelectorAll('#nav button').forEach(nb=>nb.classList.remove('active'));
+    document.querySelector('#nav button[data-tab="game"]').classList.add('active');
+    document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+    document.getElementById('tab-game').classList.add('active');
+    renderGame();
+  });
+  el.querySelectorAll('[data-del-game]').forEach(b=>b.onclick=()=>{
+    if(!confirm('Удалить этот матч? Рейтинги навыков будут пересчитаны, действие необратимо.')) return;
+    deleteGame(b.dataset.delGame);
+  });
+}
+
+function deleteGame(gameId){
+  const idx = data.games.findIndex(g=>g.id===gameId);
+  if(idx===-1) return;
+  const g = data.games[idx];
+  if(!g.missed && g.xpGained){
+    Object.entries(g.xpGained).forEach(([attr,xp])=> applyXp(attr, -xp));
+    if(g.hotStreakBonusAwarded) Object.keys(data.player.attributes).forEach(k=>applyXp(k, -HOT_STREAK_BONUS));
+  }
+  data.bonusLedger = data.bonusLedger.filter(b=> b.gameId !== gameId);
+  data.games.splice(idx,1);
+  recordOvrSnapshot(todayStr()); // refresh current OVR snapshot; past months' snapshots are left as historical record
+  saveData();
+  renderAll();
 }
 
 // ================= RENDER: MY TEAM (rink lineup) =================
