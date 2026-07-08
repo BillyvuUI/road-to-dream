@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Road to Dream">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#0B1F3A">
+<title>ULTIMATE HOCKEY: ROAD TO DREAM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ice:#0B1F3A; --ice-deep:#050d1a; --rink-line:#C8102E; --gold:#FFB81C;
+    --gold-2:#FFD766; --steel:#8B96A5; --frost:#F5F7FA; --panel:#122A4D; --panel-2:#0F2440;
+    --pos:#3DDC97; --neg:#FF6B6B; --electric:#00D4FF; --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:
+      radial-gradient(ellipse at 50% 0%, rgba(255,110,20,.35) 0%, transparent 55%),
+      radial-gradient(ellipse at 20% 90%, rgba(255,60,10,.18) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 90%, rgba(255,150,0,.14) 0%, transparent 60%),
+      linear-gradient(180deg,#1a0a05 0%, #0d0603 55%, #050302 100%);
+    color:var(--frost); font-family:'Inter',sans-serif; min-height:100vh; overflow-x:hidden;}
+  .fire-number{position:fixed; top:50%; left:50%; transform:translate(-50%,-55%); font-family:'Oswald',sans-serif;
+    font-weight:800; font-size:min(70vw,520px); line-height:1; color:rgba(255,140,40,.07); z-index:0; pointer-events:none;
+    user-select:none; letter-spacing:-10px;}
+  .rink-lines{position:fixed; inset:0; pointer-events:none; opacity:.05; z-index:0;
+    background:repeating-linear-gradient(0deg, transparent 0 78px, var(--frost) 78px 79px),
+      repeating-linear-gradient(90deg, transparent 0 78px, var(--frost) 78px 79px);}
+  .app{position:relative; z-index:1; max-width:820px; margin:0 auto; padding:20px 16px 60px;}
+  header{display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px;
+    border-bottom:3px solid transparent; border-image:linear-gradient(90deg,var(--rink-line),var(--electric)) 1; padding-bottom:14px;}
+  h1{font-family:'Oswald',sans-serif; font-weight:800; letter-spacing:1px; font-size:24px; margin:0; text-transform:uppercase;
+    background:linear-gradient(90deg,var(--frost),var(--electric)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  h1 span{color:var(--gold); -webkit-text-fill-color:var(--gold);}
+  .tagline{color:var(--steel); font-size:11px; margin-top:2px; letter-spacing:.5px; text-transform:uppercase;}
+  .crest{width:40px; height:40px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--electric), var(--ice) 70%);
+    border:2px solid var(--gold); display:flex; align-items:center; justify-content:center; font-family:'Oswald',sans-serif;
+    font-weight:800; font-size:14px; color:var(--frost); flex-shrink:0; box-shadow:0 0 12px rgba(0,212,255,.4);}
+  .header-left{display:flex; align-items:center; gap:10px;}
+  nav{display:flex; gap:4px; flex-wrap:wrap; margin-bottom:18px; background:rgba(0,0,0,.25); padding:5px; border-radius:14px;
+    border:1px solid rgba(0,212,255,.1);}
+  nav button{background:transparent; color:var(--steel); border:1px solid transparent; padding:9px 13px; border-radius:10px;
+    font-family:'Oswald',sans-serif; font-size:12px; text-transform:uppercase; letter-spacing:.4px; cursor:pointer; flex:1; min-width:80px;
+    transition:.15s;}
+  nav button.active{background:linear-gradient(155deg,var(--electric),#0077a3); color:var(--ice-deep); font-weight:700;
+    box-shadow:0 0 14px rgba(0,212,255,.35);}
+  nav button:hover:not(.active){color:var(--frost);}
+  section{display:none;} section.active{display:block; animation:fade .2s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+  .card{background:linear-gradient(155deg, var(--panel), var(--panel-2)); border-radius:var(--radius); padding:16px 16px 16px 18px; margin-bottom:14px;
+    border:1px solid rgba(0,212,255,.08); border-left:3px solid var(--electric); box-shadow:0 4px 20px rgba(0,0,0,.3); position:relative;}
+  .card h2{font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:14px; letter-spacing:1px; margin:0 0 12px; color:var(--gold);
+    display:flex; align-items:center; gap:6px;}
+  .row{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center;}
+  input, select{background:var(--panel-2); border:1px solid rgba(255,255,255,.1); color:var(--frost); padding:9px 10px;
+    border-radius:6px; font-family:'Inter',sans-serif; font-size:14px; flex:1; min-width:100px;}
+  input:focus, select:focus{outline:2px solid var(--electric); border-color:transparent;}
+  label.f{font-size:11px; color:var(--steel); display:block; margin-bottom:3px;}
+  .field{display:flex; flex-direction:column; min-width:110px; flex:1;}
+  button.primary{background:linear-gradient(135deg,var(--rink-line),#8f0a1c); color:#fff; border:none; padding:10px 20px; border-radius:8px;
+    font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:13px; letter-spacing:.5px; cursor:pointer; font-weight:700;
+    box-shadow:0 3px 12px rgba(200,16,30,.35);}
+  button.primary:hover{filter:brightness(1.1);}
+  button.ghost{background:transparent; border:1px solid var(--steel); color:var(--steel); padding:6px 12px; border-radius:6px; font-size:12px; cursor:pointer;}
+  button.ghost:hover{border-color:var(--electric); color:var(--electric);}
+  .icon-btn{background:none; border:none; color:var(--steel); cursor:pointer; font-size:16px; padding:2px 6px;}
+  .icon-btn:hover{color:var(--rink-line);}
+  .daybtn{background:var(--panel-2); border:1px solid var(--steel); color:var(--steel); border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;}
+  .daybtn.on{background:var(--gold); color:var(--ice-deep); border-color:var(--gold); font-weight:600;}
+  ul.list{list-style:none; margin:0; padding:0;}
+  ul.list li{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(255,255,255,.06);}
+  ul.list li:last-child{border-bottom:none;}
+  .pill{display:inline-block; background:var(--panel-2); border:1px solid rgba(0,212,255,.15); border-radius:999px; padding:2px 9px; font-size:11px; color:var(--steel); margin-left:6px;}
+  .empty{color:var(--steel); font-size:13px; padding:14px 0; text-align:center;}
+  .muted{color:var(--steel); font-size:12px;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  thead th{text-align:left; font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:10.5px; letter-spacing:.5px;
+    color:var(--electric); padding:9px 10px; border-bottom:2px solid rgba(0,212,255,.25); white-space:nowrap;}
+  tbody td{padding:10px 10px; border-bottom:1px solid rgba(255,255,255,.07); vertical-align:middle;}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.025);}
+  tbody tr:hover{background:rgba(0,212,255,.06);}
+  .chart-wrap{overflow-x:auto; border-radius:8px;}
+
+  /* Player card */
+  .ovr-hero{display:flex; align-items:center; gap:18px; margin-bottom:16px; flex-wrap:wrap;}
+  .ovr-badge{background:linear-gradient(155deg, var(--gold-2), var(--gold)); color:var(--ice-deep);
+    font-family:'Oswald',sans-serif; font-weight:800; width:92px; height:100px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    box-shadow:0 0 22px rgba(255,184,28,.4); border:2px solid rgba(255,255,255,.3);}
+  .ovr-badge .num{font-size:32px; line-height:1; text-shadow:0 1px 2px rgba(0,0,0,.2);}
+  .ovr-badge .lbl{font-size:9px; letter-spacing:1.5px;}
+  .player-name{font-family:'Oswald',sans-serif; font-size:24px; text-transform:uppercase; font-weight:800; letter-spacing:.5px;
+    background:linear-gradient(90deg,var(--frost),var(--electric)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .attr-block{margin-bottom:14px;}
+
+  /* 3-column game-menu layout (screenshot-style) */
+  .game-grid{display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:12px; margin-bottom:14px; align-items:start;}
+  @media(max-width:720px){ .game-grid{grid-template-columns:1fr;} }
+  .gg-col{display:flex; flex-direction:column; gap:12px;}
+  .gg-box{background:linear-gradient(155deg, var(--panel), var(--panel-2)); border-radius:10px; padding:12px;
+    border:1px solid rgba(0,212,255,.08); border-left:3px solid var(--electric); box-shadow:0 4px 16px rgba(0,0,0,.25);}
+  .gg-box-title{font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:11px; letter-spacing:.8px; color:var(--gold); margin-bottom:8px;}
+  .gg-line{display:flex; justify-content:space-between; font-size:12px; gap:8px;}
+  .gg-center{position:relative; border-radius:14px; min-height:280px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; text-align:center; padding:20px 12px; overflow:hidden;
+    background:radial-gradient(ellipse at 50% 30%, rgba(255,140,40,.18), transparent 65%);}
+  .gg-shield{width:110px; height:126px; clip-path:polygon(50% 0%,100% 22%,100% 100%,0% 100%,0% 22%);
+    background:linear-gradient(155deg,rgba(255,255,255,.1),rgba(0,0,0,.35)); border:3px solid var(--gold);
+    display:flex; align-items:center; justify-content:center;}
+  .gg-shield-num{font-family:'Oswald',sans-serif; font-weight:800; font-size:44px;}
+  .gg-tier-name{font-family:'Oswald',sans-serif; font-weight:700; font-size:14px; letter-spacing:1.5px; margin-top:8px;}
+
+  /* Cinematic hero banner (career-mode menu style) */
+  .hero-banner{position:relative; border-radius:var(--radius); overflow:hidden; margin-bottom:12px; padding:22px 18px;
+    min-height:150px; display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    background:radial-gradient(ellipse at 30% 20%, rgba(0,212,255,.12), transparent 60%),
+      radial-gradient(ellipse at 70% 100%, rgba(200,16,30,.15), transparent 60%),
+      linear-gradient(155deg,#0a1f38,#050d1a);
+    background-size:cover; background-position:center;
+    border:1px solid rgba(0,212,255,.15); box-shadow:0 10px 30px rgba(0,0,0,.4);}
+  .hero-tier{width:78px; height:88px; flex-shrink:0; background:linear-gradient(155deg,rgba(255,255,255,.08),rgba(0,0,0,.3));
+    border:2px solid var(--gold); border-radius:10px; clip-path:polygon(50% 0%,100% 20%,100% 100%,0% 100%,0% 20%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .hero-tier-num{font-family:'Oswald',sans-serif; font-weight:800; font-size:28px; line-height:1;}
+  .hero-tier-name{font-family:'Oswald',sans-serif; font-size:9px; letter-spacing:1px; color:var(--frost); margin-top:2px;}
+  .hero-info{flex:1; min-width:160px;}
+  .hero-photo-btn{display:inline-block; margin-top:8px; font-size:11px; color:var(--electric); border:1px solid var(--electric);
+    border-radius:999px; padding:4px 12px; cursor:pointer;}
+  .hero-photo-btn:hover{background:rgba(0,212,255,.1);}
+  .stat-rail{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;}
+  .stat-rail-item{background:var(--panel-2); border-radius:8px; padding:10px 6px; text-align:center; border:1px solid rgba(0,212,255,.08);}
+  .sr-num{font-family:'Oswald',sans-serif; font-weight:800; font-size:18px; color:var(--gold);}
+  .sr-lbl{font-size:9px; color:var(--steel); text-transform:uppercase; letter-spacing:.3px; margin-top:2px;}
+  @media(max-width:480px){ .stat-rail{grid-template-columns:repeat(2,1fr);} }
+  .attr-top{display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;}
+  .attr-top .lbl{font-weight:600;}
+  .attr-top .val{font-family:'Oswald',sans-serif; font-weight:700; color:var(--gold);}
+  .bar-bg{background:var(--panel-2); border-radius:999px; height:10px; overflow:hidden;}
+  .bar-fill{height:100%; background:linear-gradient(90deg, var(--rink-line), var(--gold)); border-radius:999px; transition:width .4s;}
+  .xp-bg{background:var(--panel-2); border-radius:999px; height:4px; overflow:hidden; margin-top:3px;}
+  .xp-fill{height:100%; background:var(--pos); border-radius:999px; transition:width .4s;}
+  .goal-box{background:var(--panel-2); border:1px dashed var(--gold); border-radius:8px; padding:10px 12px; font-size:13px;}
+  .goal-box b{color:var(--gold);}
+  .history-chart{overflow-x:auto;}
+
+  /* Tasks / progress */
+  .progress-wrap{margin-bottom:14px;}
+  .progress-label{display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;}
+  .milestone-list{margin-top:10px; font-size:12px;}
+  .milestone-list .m-item{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06);}
+  .m-item.done{color:var(--pos);}
+  .week-grid{display:grid; grid-template-columns:120px repeat(7,1fr); gap:4px; font-size:11px; align-items:center;}
+  .week-grid .hcell{text-align:center; color:var(--steel); font-family:'Oswald',sans-serif; text-transform:uppercase; padding:4px 0;}
+  .week-grid .taskname{font-size:12px; padding:4px 2px;}
+  .chk{width:26px; height:26px; margin:0 auto; border-radius:6px; background:var(--panel-2); border:1px solid var(--steel);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px;}
+  .chk.on{background:var(--pos); border-color:var(--pos); color:var(--ice-deep); font-weight:700;}
+  @media(max-width:600px){
+    .week-grid{grid-template-columns:90px repeat(7,1fr); font-size:10px;}
+    .chk{width:22px; height:22px;}
+  }
+  .savebar{position:fixed; bottom:14px; right:14px; font-size:11px; color:var(--steel); background:var(--panel); padding:6px 12px; border-radius:999px; opacity:0; transition:opacity .3s; z-index:5;}
+  .savebar.show{opacity:1;}
+  fieldset{border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:10px; margin-bottom:10px;}
+  legend{font-family:'Oswald',sans-serif; font-size:12px; color:var(--gold); text-transform:uppercase; letter-spacing:.5px; padding:0 6px;}
+
+  .line-tabs{display:flex; gap:4px; margin-bottom:12px; background:rgba(0,0,0,.25); border-radius:10px; padding:4px;}
+  .line-tab{flex:1; background:transparent; border:none; color:var(--steel); padding:8px 6px; border-radius:8px;
+    font-family:'Oswald',sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:.3px; cursor:pointer;}
+  .line-tab.active{background:linear-gradient(155deg,var(--electric),#0077a3); color:var(--ice-deep); font-weight:700;}
+  .halfrink{position:relative; width:100%; padding-top:105%; border-radius:16px; overflow:hidden;
+    background:linear-gradient(180deg,#0d3a5c,#0a2d47);
+    border:2px solid var(--electric); box-shadow:0 0 30px rgba(0,212,255,.12) inset;}
+  .halfrink-crease{position:absolute; top:0; left:50%; width:34%; height:16%; transform:translateX(-50%);
+    border:2px solid rgba(255,255,255,.35); border-top:none; border-radius:0 0 50% 50%; background:rgba(255,255,255,.04);}
+  .halfrink-circle{position:absolute; top:22%; width:15%; padding-top:15%; transform:translate(-50%,0);
+    border:2px solid rgba(255,255,255,.18); border-radius:50%;}
+  .rink-slot{position:absolute; transform:translate(-50%,-50%); background:rgba(255,255,255,.08); border:1px dashed var(--steel);
+    border-radius:10px; padding:6px 8px; min-width:64px; text-align:center; cursor:pointer;}
+  .rink-slot.filled{background:linear-gradient(155deg,var(--gold-2),var(--gold)); border:1px solid var(--gold); color:var(--ice-deep);}
+  .rink-slot-pos{font-size:9px; opacity:.7; font-family:'Oswald',sans-serif;}
+  .rink-slot-name{font-size:11px; font-weight:600; margin-top:2px; word-break:break-word;}
+</style>
+</head>
+<body>
+<div class="rink-lines"></div>
+<div class="fire-number" id="fire-number-display">39</div>
+<div class="app">
+  <header>
+    <div class="header-left">
+      <div class="crest">UH</div>
+      <div>
+        <h1>ULTIMATE HOCKEY<span>.</span></h1>
+        <div class="tagline">ROAD TO DREAM — карьера Самира</div>
+      </div>
+    </div>
+    <button class="ghost" id="parent-lock-btn" style="align-self:center;">🔒 Режим родителя</button>
+  </header>
+
+  <nav id="nav">
+    <button data-tab="player" class="active">Карточка игрока</button>
+    <button data-tab="game">Внести игру</button>
+    <button data-tab="matches">Матчи</button>
+    <button data-tab="team">Моя команда</button>
+    <button data-tab="training">Тренировки</button>
+    <button data-tab="tasks">Задания</button>
+    <button data-tab="settings">Настройки</button>
+  </nav>
+
+  <section id="tab-player" class="active"></section>
+  <section id="tab-game"></section>
+  <section id="tab-matches"></section>
+  <section id="tab-team"></section>
+  <section id="tab-training"></section>
+  <section id="tab-tasks"></section>
+  <section id="tab-settings"></section>
+</div>
+<div class="savebar" id="savebar">сохранено</div>
+
+<script type="module">
+// ================= FIREBASE / FIRESTORE STORAGE =================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBp69nrVyCgl70Wh3kj6roWVPAdm0XlShk",
+  authDomain: "samir-app-741d1.firebaseapp.com",
+  projectId: "samir-app-741d1",
+  storageBucket: "samir-app-741d1.firebasestorage.app",
+  messagingSenderId: "1001601715328",
+  appId: "1:1001601715328:web:bf56d143798063cea1ea65",
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const appDocRef = doc(db, 'appdata', 'samir');
+
+const LEVEL_XP = 15; // XP needed per level, editable
+
+const LINE_GROUPS = [
+  {id:'line1', label:'Звено 1', slots:[
+    {id:'g1', pos:'В', top:'8%', left:'50%'},
+    {id:'ld1', pos:'ЛЗ', top:'28%', left:'32%'}, {id:'rd1', pos:'ПЗ', top:'28%', left:'68%'},
+    {id:'lw1', pos:'ЛК', top:'62%', left:'20%'}, {id:'c1', pos:'Ц', top:'70%', left:'50%'}, {id:'rw1', pos:'ПК', top:'62%', left:'80%'},
+  ]},
+  {id:'line2', label:'Звено 2', slots:[
+    {id:'g1', pos:'В', top:'8%', left:'50%'},
+    {id:'ld2', pos:'ЛЗ', top:'28%', left:'32%'}, {id:'rd2', pos:'ПЗ', top:'28%', left:'68%'},
+    {id:'lw2', pos:'ЛК', top:'62%', left:'20%'}, {id:'c2', pos:'Ц', top:'70%', left:'50%'}, {id:'rw2', pos:'ПК', top:'62%', left:'80%'},
+  ]},
+  {id:'line3', label:'Звено 3', slots:[
+    {id:'g1', pos:'В', top:'8%', left:'50%'},
+    {id:'ld3', pos:'ЛЗ', top:'28%', left:'32%'}, {id:'rd3', pos:'ПЗ', top:'28%', left:'68%'},
+    {id:'lw3', pos:'ЛК', top:'62%', left:'20%'}, {id:'c3', pos:'Ц', top:'70%', left:'50%'}, {id:'rw3', pos:'ПК', top:'62%', left:'80%'},
+  ]},
+];
+const LINEUP_SLOTS = [...new Map(LINE_GROUPS.flatMap(g=>g.slots).map(s=>[s.id,s])).values()];
+
+function getRosterNames(){
+  return Object.values(data.lineup).filter(Boolean);
+}
+
+const ICON_PATHS = {
+  skating: '<path d="M3 17l4-2 3 1 5-3 6 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 15l1.5-4h3L12 15" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M15 6l3 3M18 6l-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  dribbling: '<circle cx="8" cy="16" r="2.3" fill="currentColor"/><path d="M10 14C13 9 17 7 20 8c-1 3-4 6-8 7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M17.5 6.5l1.8.6-.6 1.8" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  shooting: '<circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.7" fill="none"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.7" fill="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+  iq: '<path d="M9 18v-1.6c-2-1-3.2-2.8-3.2-5A5.2 5.2 0 0 1 11 6.2 5.2 5.2 0 0 1 16.2 11.4c0 2.2-1.2 4-3.2 5V18" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.3 20.2h3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M11 6.2V4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  battle: '<path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M9.5 12l1.8 1.8L15 10" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  fitness: '<rect x="2" y="10" width="3" height="4" rx="1" fill="currentColor"/><rect x="19" y="10" width="3" height="4" rx="1" fill="currentColor"/><rect x="5" y="8" width="2.5" height="8" rx="1" fill="currentColor"/><rect x="16.5" y="8" width="2.5" height="8" rx="1" fill="currentColor"/><rect x="7.5" y="11" width="9" height="2" fill="currentColor"/>',
+};
+function icon(key, size=16){
+  const p = ICON_PATHS[key];
+  if(!p) return '';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="vertical-align:-3px; display:inline-block;">${p}</svg>`;
+}
+
+const ATTR_DEFS = {
+  skating:    { label:'Катание',            emoji:'⚡' },
+  dribbling:  { label:'Дриблинг',           emoji:'🌀' },
+  shooting:   { label:'Бросок',             emoji:'🎯' },
+  iq:         { label:'Игровой интеллект',  emoji:'🧠' },
+  battle:     { label:'Борьба',             emoji:'🥊' },
+  fitness:    { label:'Физподготовка',      emoji:'💪' }, // grows ONLY from training log, never from match stats
+};
+
+// Raw-stat -> XP weights. Every field below is either a countable, observable
+// match event, or (for 'decisions' only) a coach-style holistic grade — no
+// invented pseudo-metrics like xG or split speed/acceleration ratings.
+const XP_WEIGHTS = {
+  skating:    { racesWon:1.2, racesLost:-1.0, beatenOnSpeed:-1.0 },
+  dribbling:  { successfulDekes:1.5, failedDekes:-1.2 },
+  shooting:   { goals:4, shotsOnTarget:0.8, shotsTotal:0.15 }, // + a derived conversion penalty applied separately, see save-game handler
+  iq:         { assists:2.5, turnovers:-2.0, decisions:1.5, lateReturns:-1.0, plusMinus:1.5, chancesCreated:0.8 },
+  battle:     { duelsWon:1.5, duelsLost:-1.2, takeaways:1, penalties:-0.8 },
+};
+const SUBJECTIVE_FIELDS = new Set(['decisions']); // only field graded 1-10 rather than counted
+const SHOT_CONVERSION_PENALTY = 1.2; // per shot on target that did NOT become a goal. Must outweigh the +0.8 accuracy credit + 0.15 volume credit, or "shoots a lot, scores nothing" keeps net-rewarding him — that was the exact bug reported and fixed here.
+
+// Single-match rating (Flashscore-style) — fast per-game signal, separate from
+// the slow attribute XP. base + scaled sum of this game's total XP across attrs.
+const MATCH_RATING_BASE = 6.0;
+const MATCH_RATING_SCALE = 0.15;
+// Hot-streak bonus: every N consecutive played (non-missed) games rated >= threshold
+// grants a one-off XP bonus to every attribute.
+const HOT_STREAK_LEN = 3;
+const HOT_STREAK_THRESHOLD = 7.0;
+const HOT_STREAK_BONUS = 4;
+const MAX_MARKS_PER_SESSION = 3; // training checklist: cap per session, mirrors the wall poster
+
+const TRAINING_TASKS = [
+  {id:'tr1', level:1, name:'Пошёл в отбор первым', attr:'battle'},
+  {id:'tr2', level:1, name:'Ускорился без шайбы', attr:'skating'},
+  {id:'tr3', level:2, name:'Вернулся в защиту не последним', attr:'fitness'},
+  {id:'tr4', level:2, name:'Пошёл в борьбу у борта', attr:'battle'},
+  {id:'tr5', level:3, name:'Догнал и отобрал шайбу', attr:'battle'},
+  {id:'tr6', level:3, name:'Активная игра в защите', attr:'fitness'},
+];
+const TRAINING_XP_PER_MARK = 1; // flat for every training item, no per-task multiplier — emphasis on a skill = add more items for it, not weight existing ones higher
+const DEFAULT_PARENT_PIN = '1111'; // change data.parentPin from Settings once unlocked
+
+const TASK_XP = 1; // was 2 — kept small so daily habits are a supplement, not the main growth engine
+// Escalating weekly bonus: longer consecutive perfect-week streaks pay more per week,
+// not just linearly — this is the "hard but a good game" difficulty curve.
+function weeklyBonusForStreak(n){
+  if(n>=4) return 45;
+  if(n>=2) return 30;
+  return 15;
+}
+const RECOMMENDED_MILESTONES = {
+  monthly: [
+    {threshold:70, reward:'🥇 Голд — маленькая привилегия'},
+    {threshold:120, reward:'💎 Платина — привилегия побольше'},
+    {threshold:160, reward:'🌟 Супернова — большая награда'},
+  ],
+  yearly: [
+    {threshold:1200, reward:'🌟 Годовая Супернова — большой бонус'},
+  ]
+};
+
+function defaultData(){
+  return {
+    player: { name:'Самир', photoUrl:null, jerseyNumber:'39', attributes:{
+      skating:{rating:50, xp:0}, dribbling:{rating:50, xp:0}, shooting:{rating:50, xp:0},
+      iq:{rating:50, xp:0}, battle:{rating:50, xp:0}, fitness:{rating:50, xp:0}
+    }, ovrHistory:{} },
+    games: [],
+    tasks: [
+      {id:'t1', name:'Утренняя зарядка', points:1, attr:'fitness', skillXp:0.5, days:[0,1,2,3,4,5,6], confirmRequired:false},
+      {id:'t2', name:'Бокс', points:1, attr:'battle', skillXp:0.5, days:[0], confirmRequired:false},
+      {id:'t3', name:'ОФП', points:1, attr:'fitness', skillXp:1, days:[5,6], confirmRequired:false},
+      {id:'t4', name:'Баланс-борд 10 мин', points:1, attr:'skating', skillXp:1, days:[1,3], confirmRequired:false},
+      {id:'t5', name:'Дриблинг с клюшкой дома', points:1, attr:'dribbling', skillXp:1, days:[2,4], confirmRequired:false},
+    ],
+    taskLog: {},
+    milestones: {
+      monthly: RECOMMENDED_MILESTONES.monthly.map((m,i)=>({id:'mm'+i, ...m})),
+      yearly: RECOMMENDED_MILESTONES.yearly.map((m,i)=>({id:'my'+i, ...m}))
+    },
+    habit: { perfectWeeks:0, lastSettledWeekMonday:null },
+    roster: [],
+    trainingLog: {},
+    trainingLevel: 1,
+    parentPin: DEFAULT_PARENT_PIN,
+    bonusLedger: [],
+    lineup: {}
+  };
+}
+let data = defaultData();
+let uiState = { gameDraft: {} };
+let parentUnlocked = false; // session-only; resets on reload — not persisted so the phone always starts locked
+
+function requireParentUnlock(){
+  if(parentUnlocked) return true;
+  const pin = prompt('PIN родителя:');
+  if(pin === data.parentPin){ parentUnlocked = true; renderAll(); return true; }
+  if(pin !== null) alert('Неверный PIN.');
+  return false;
+}
+
+function uid(){ return Math.random().toString(36).slice(2,10); }
+
+async function loadData(){
+  try{
+    const snap = await getDoc(appDocRef);
+    if(snap.exists() && snap.data().json){ data = Object.assign(defaultData(), JSON.parse(snap.data().json)); }
+  }catch(e){ console.error('load failed', e); alert('Не удалось загрузить данные из Firebase — проверь интернет-соединение.'); }
+  if(settleWeeks()) saveData();
+  renderAll();
+}
+let saveTimer=null;
+async function saveData(){
+  try{
+    await setDoc(appDocRef, { json: JSON.stringify(data), updatedAt: Date.now() });
+    const bar=document.getElementById('savebar');
+    bar.classList.add('show');
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>bar.classList.remove('show'), 900);
+  }catch(e){ console.error('save failed', e); alert('Не удалось сохранить — проверь интернет-соединение, изменения могут потеряться.'); }
+}
+
+// ================= HELPERS =================
+function monthKey(d){ return d.slice(0,7); } // 'YYYY-MM' from 'YYYY-MM-DD'
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function mondayOf(date){
+  const d = new Date(date);
+  const idx = (d.getDay()+6)%7; // 0=Monday
+  d.setDate(d.getDate()-idx);
+  return d;
+}
+const DAY_LABELS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+function addDays(dateStr, n){
+  const d = new Date(dateStr); d.setDate(d.getDate()+n);
+  return d.toISOString().slice(0,10);
+}
+function weekdayIndex(dateStr){ return (new Date(dateStr).getDay()+6)%7; } // 0=Monday
+
+function mondayStr(dateStr){ return mondayOf(dateStr).toISOString().slice(0,10); }
+
+// Walks forward week-by-week (Mon-Sun) from the last settled week up to (not including)
+// the current week, checking whether every scheduled task-day that week was fully done.
+// Idempotent — safe to call on every load. Bonus goes to the rewards ledger, never to skill XP.
+function settleWeeks(){
+  const h = data.habit;
+  const thisMonday = mondayStr(todayStr());
+  if(!h.lastSettledWeekMonday){ h.lastSettledWeekMonday = thisMonday; return false; } // first run ever — nothing to evaluate yet
+  let cursor = h.lastSettledWeekMonday;
+  let changed = false;
+  while(cursor < thisMonday){
+    changed = true;
+    const weekDates = Array.from({length:7}, (_,i)=>addDays(cursor, i));
+    let perfect = true;
+    weekDates.forEach(d=>{
+      const weekday = weekdayIndex(d);
+      const scheduled = data.tasks.filter(t=>t.days.includes(weekday));
+      if(scheduled.length===0) return; // no tasks that day — neutral, doesn't break the week
+      const closed = scheduled.every(t=> data.taskLog[d] && data.taskLog[d][t.id] && data.taskLog[d][t.id].status==='done');
+      if(!closed) perfect = false;
+    });
+    if(perfect){
+      h.perfectWeeks++;
+      const bonus = weeklyBonusForStreak(h.perfectWeeks);
+      data.bonusLedger.push({date: cursor, points: bonus, reason:`Идеальная неделя №${h.perfectWeeks} подряд`});
+    } else {
+      h.perfectWeeks = 0;
+    }
+    cursor = addDays(cursor, 7);
+  }
+  h.lastSettledWeekMonday = thisMonday;
+  return changed;
+}
+
+const SUB_LABELS = {
+  racesWon:'Забеги за шайбой выиграно', racesLost:'Забеги за шайбой проиграно', beatenOnSpeed:'Обыграли на скорости',
+  successfulDekes:'Успешные обводки', failedDekes:'Неудачные обводки',
+  goals:'Голы', shotsOnTarget:'Броски в створ', shotsTotal:'Броски всего',
+  assists:'Голевые передачи', turnovers:'Потери шайбы', decisions:'Принятие решений',
+  lateReturns:'Не успел вернуться в оборону', plusMinus:'+/- на льду', chancesCreated:'Явные моменты созданы',
+  duelsWon:'Единоборства выиграно', duelsLost:'Единоборства проиграно', takeaways:'Отборы', penalties:'Штрафы'
+};
+
+function computeAttrSubAverages(attrKey, lastN=5){
+  if(!XP_WEIGHTS[attrKey]) return null; // e.g. fitness — grows from training log, not match raw stats
+  const recent = data.games.filter(g=>!g.missed).slice(-lastN);
+  const fields = Object.keys(XP_WEIGHTS[attrKey]);
+  if(recent.length===0) return fields.map(f=>({field:f, avg:null}));
+  return fields.map(f=>{
+    const sum = recent.reduce((s,g)=> s + (g.raw[f]||0), 0);
+    return {field:f, avg: sum/recent.length};
+  });
+}
+
+function getTier(ovrValue){
+  if(ovrValue>=85) return {name:'СУПЕРНОВА', color:'#B24BF3'};
+  if(ovrValue>=75) return {name:'ПЛАТИНА', color:'#7FE0E0'};
+  if(ovrValue>=65) return {name:'ЗОЛОТО', color:'#FFB81C'};
+  if(ovrValue>=50) return {name:'СЕРЕБРО', color:'#C0C6CC'};
+  return {name:'БРОНЗА', color:'#C87F3D'};
+}
+
+function ovr(){
+  const vals = Object.values(data.player.attributes).map(a=>a.rating);
+  return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
+}
+
+function applyXp(attrKey, xpDelta){
+  const a = data.player.attributes[attrKey];
+  a.xp += xpDelta;
+  while(a.xp >= LEVEL_XP && a.rating < 99){ a.rating++; a.xp -= LEVEL_XP; }
+  while(a.xp < 0){
+    if(a.rating > 20){ a.rating--; a.xp += LEVEL_XP; }
+    else { a.xp = 0; break; }
+  }
+}
+
+function recordOvrSnapshot(dateStr){
+  data.player.ovrHistory[monthKey(dateStr)] = ovr();
+}
+
+// ================= TAB SWITCHING =================
+document.getElementById('parent-lock-btn').addEventListener('click', ()=>{
+  if(parentUnlocked){ parentUnlocked = false; renderAll(); }
+  else requireParentUnlock();
+});
+
+document.getElementById('nav').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-tab]');
+  if(!btn) return;
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  renderAll();
+});
+
+// ================= RENDER: PLAYER CARD =================
+function renderPlayer(){
+  const el = document.getElementById('tab-player');
+  const currentOvr = ovr();
+  const attrs = Object.entries(data.player.attributes).map(([key,a])=>({key, ...a, ...ATTR_DEFS[key]}));
+  const tier = getTier(currentOvr);
+  const played = data.games.filter(g=>!g.missed);
+  const lastRating = played.length ? played[played.length-1].matchRating.toFixed(1) : '—';
+  const avgRating = played.length ? (played.reduce((s,g)=>s+g.matchRating,0)/played.length).toFixed(1) : '—';
+
+  // lagging = the actual weakest attribute right now (not "closest to level up")
+  const lagging = attrs.reduce((min,a)=> (!min || a.rating<min.rating) ? a : min, null);
+
+  // today's tasks progress (left "daily objectives" style box)
+  const todayStr_ = todayStr();
+  const todayWeekday = weekdayIndex(todayStr_);
+  const todayTasks = data.tasks.filter(t=>t.days.includes(todayWeekday));
+  const todayDone = todayTasks.filter(t=> data.taskLog[todayStr_] && data.taskLog[todayStr_][t.id] && data.taskLog[todayStr_][t.id].status==='done').length;
+
+  // next reward (monthly milestone) for the right column
+  const now_ = new Date();
+  const curMonthKey_ = now_.toISOString().slice(0,7);
+  let monthTotal_ = 0;
+  Object.entries(data.taskLog).forEach(([date,entries])=>{ if(date.startsWith(curMonthKey_)) monthTotal_ += Object.values(entries).filter(e=>e.status==='done').reduce((s,e)=>s+e.points,0); });
+  data.bonusLedger.forEach(b=>{ if(b.date.startsWith(curMonthKey_)) monthTotal_ += b.points; });
+  const nextReward = data.milestones.monthly.slice().sort((a,b)=>a.threshold-b.threshold).find(m=>monthTotal_<m.threshold);
+
+  // last 5 games as chips (right "last game" row)
+  const last5 = played.slice(-5);
+  while(last5.length<5) last5.unshift(null);
+
+  el.innerHTML = `
+    <div class="game-grid">
+      <div class="gg-col">
+        <div class="gg-box">
+          <div class="gg-box-title">Цели дня</div>
+          <div class="gg-line"><span>Задания сегодня</span><b>${todayDone}/${todayTasks.length||0}</b></div>
+          <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${todayTasks.length?todayDone/todayTasks.length*100:0}%"></div></div>
+          <div class="gg-line" style="margin-top:10px;"><span>🔥 Недель без пропусков</span><b>${data.habit.perfectWeeks}</b></div>
+        </div>
+        <div class="gg-box">
+          <div class="gg-box-title">Отстающий навык</div>
+          <div class="gg-line"><span>${icon(lagging.key)} ${lagging.label}</span><b>${lagging.rating}</b></div>
+          <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${Math.max(0,Math.min(100,lagging.xp/LEVEL_XP*100))}%"></div></div>
+          <div class="muted" style="margin-top:4px; font-size:11px;">${Math.ceil(LEVEL_XP-lagging.xp)} XP до следующего уровня</div>
+        </div>
+      </div>
+
+      <div class="gg-center" style="${data.player.photoUrl ? `background-image:linear-gradient(180deg, rgba(5,13,26,.25), rgba(5,13,26,.85)), url('${data.player.photoUrl}'); background-size:cover; background-position:center;` : ''}">
+        <div class="gg-shield" style="border-color:${tier.color}; box-shadow:0 0 30px ${tier.color}88;">
+          <div class="gg-shield-num" style="color:${tier.color};">${currentOvr}</div>
+        </div>
+        <div class="gg-tier-name" style="color:${tier.color};">${tier.name}</div>
+        <div class="player-name" style="margin-top:8px;">${data.player.name}</div>
+        <label class="hero-photo-btn">📷 ${data.player.photoUrl?'Заменить фото':'Загрузить фото'}<input type="file" id="player-photo-input" accept="image/*" style="display:none;"></label>
+      </div>
+
+      <div class="gg-col">
+        <div class="gg-box" style="padding:0; overflow:hidden;">
+          <div style="background:linear-gradient(90deg,${tier.color}33,transparent); padding:10px 12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.08);">
+            <span style="font-family:'Oswald',sans-serif; font-weight:800; color:${tier.color};">${currentOvr}</span>
+            <b>${tier.name}</b>
+          </div>
+          <div style="padding:10px 12px;">
+            <div class="gg-line"><span>Игр сыграно</span><b>${played.length}</b></div>
+            <div class="gg-line"><span>Средняя оценка</span><b>${avgRating}</b></div>
+            <div class="muted" style="font-size:10px; margin:6px 0 4px;">Последние игры</div>
+            <div style="display:flex; gap:4px;">${last5.map(g=>`<div style="flex:1; background:var(--panel-2); border-radius:5px; text-align:center; padding:4px 0; font-size:11px;">${g?g.matchRating.toFixed(1):'—'}</div>`).join('')}</div>
+          </div>
+        </div>
+        <div class="gg-box">
+          <div class="gg-box-title">Следующая награда</div>
+          ${nextReward ? `<div class="gg-line"><span>${nextReward.threshold} очков</span><b>${monthTotal_}/${nextReward.threshold}</b></div>
+          <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${Math.min(100,monthTotal_/nextReward.threshold*100)}%"></div></div>
+          <div class="muted" style="margin-top:4px; font-size:11px;">${nextReward.reward}</div>`
+          : `<div class="muted">Все майлстоуны месяца достигнуты 🎉</div>`}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      ${attrs.map(a=>{
+        const lastGame = data.games[data.games.length-1];
+        const lastDelta = lastGame ? lastGame.xpGained[a.key] : null;
+        const deltaTag = (lastDelta!==null && Math.abs(lastDelta)>=0.05)
+          ? `<span style="color:${lastDelta>0?'var(--pos)':'var(--neg)'}; font-size:11px; margin-left:6px;">${lastDelta>0?'+':''}${lastDelta.toFixed(1)}</span>` : '';
+        const subs = computeAttrSubAverages(a.key);
+        const subsHtml = subs===null
+          ? `<div class="muted">Растёт только из тренировок — см. вкладку «Тренировки»</div>`
+          : (subs.map(s=>`
+          <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
+            <span class="muted" style="flex:2;">${SUB_LABELS[s.field]}</span>
+            <span style="font-family:'Oswald',sans-serif;">${s.avg===null?'—':s.avg.toFixed(1)}</span>
+          </div>`).join('') || '<div class="empty">Пока нет игр</div>');
+        return `
+        <div class="attr-block">
+          <div class="attr-top node" style="cursor:pointer;" data-toggle-attr="${a.key}">
+            <span class="lbl">${icon(a.key)} ${a.label}</span>
+            <span class="val">${a.rating}${deltaTag}</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${a.rating}%"></div></div>
+          <div class="xp-bg"><div class="xp-fill" style="width:${Math.max(0,Math.min(100,a.xp/LEVEL_XP*100))}%"></div></div>
+          ${parentUnlocked ? `<div class="muted" style="font-size:10px; margin-top:2px;">${a.xp.toFixed(1)} / ${LEVEL_XP} XP</div>` : ''}
+          <div id="detail-${a.key}" style="display:none; margin-top:8px; padding:8px 10px; background:var(--panel-2); border-radius:8px;">
+            <div class="muted" style="margin-bottom:4px;">Среднее за последние ${Math.min(5,data.games.length)} игр</div>
+            ${subsHtml || '<div class="empty">Пока нет игр</div>'}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="card">
+      <h2>История OVR по месяцам</h2>
+      <div id="ovr-history"></div>
+    </div>
+    <div class="card">
+      <h2>Данные для разговора о сезоне</h2>
+      <p class="muted">Это сырые тренды, не автоматический вердикт. Крупные решения (например, о поездках) лучше принимать по общей картине и разговору, а не по формуле — цифры здесь только помогают увидеть тренд, который иначе легко пропустить.</p>
+      <div id="season-summary"></div>
+    </div>
+  `;
+  renderOvrHistory();
+  renderSeasonSummary();
+  document.getElementById('player-photo-input').addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    if(file.size > 4*1024*1024){ alert('Фото слишком большое (максимум ~4 МБ) — выбери файл поменьше или сожми его.'); return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      data.player.photoUrl = reader.result;
+      saveData(); renderPlayer();
+    };
+    reader.readAsDataURL(file);
+  });
+  el.querySelectorAll('[data-toggle-attr]').forEach(row=>row.onclick=()=>{
+    const d = document.getElementById('detail-'+row.dataset.toggleAttr);
+    d.style.display = d.style.display==='none' ? 'block' : 'none';
+  });
+}
+
+function renderOvrHistory(){
+  const wrap = document.getElementById('ovr-history');
+  const entries = Object.entries(data.player.ovrHistory).sort((a,b)=>a[0].localeCompare(b[0]));
+  if(entries.length===0){ wrap.innerHTML = '<p class="empty">Пока нет данных — внеси первую игру.</p>'; return; }
+  const maxOvr = Math.max(...entries.map(e=>e[1]), 99);
+  const minOvr = Math.min(...entries.map(e=>e[1]), 40);
+  const W = Math.max(320, entries.length*70), H=130, pad=26;
+  const bars = entries.map(([m,v],i)=>{
+    const bw = (W-2*pad)/entries.length*0.6;
+    const x = pad + i*((W-2*pad)/entries.length) + ((W-2*pad)/entries.length-bw)/2;
+    const hgt = (v-minOvr)/(maxOvr-minOvr+1)*(H-2*pad-20)+8;
+    const y = H-pad-hgt;
+    const [yy,mm] = m.split('-');
+    const monthName = new Date(yy+'-'+mm+'-01').toLocaleDateString('ru-RU',{month:'short'});
+    return `<rect x="${x}" y="${y}" width="${bw}" height="${hgt}" fill="#FFB81C" rx="3"/>
+      <text x="${x+bw/2}" y="${y-6}" fill="#F5F7FA" font-size="12" text-anchor="middle" font-family="Oswald">${v}</text>
+      <text x="${x+bw/2}" y="${H-pad+14}" fill="#8B96A5" font-size="10" text-anchor="middle">${monthName}</text>`;
+  }).join('');
+  wrap.innerHTML = `<div class="history-chart"><svg width="${W}" height="${H+10}" viewBox="0 0 ${W} ${H+10}">
+    <line x1="${pad}" y1="${H-pad}" x2="${W-pad}" y2="${H-pad}" stroke="#8B96A5" stroke-width="1"/>
+    ${bars}
+  </svg></div>`;
+}
+
+function renderSeasonSummary(){
+  const wrap = document.getElementById('season-summary');
+  const played = data.games.filter(g=>!g.missed);
+  const missedCount = data.games.filter(g=>g.missed).length;
+  if(played.length===0){ wrap.innerHTML = '<p class="empty">Пока нет сыгранных игр.</p>'; return; }
+
+  const avgRating = played.reduce((s,g)=>s+g.matchRating,0)/played.length;
+  const half = Math.ceil(played.length/2);
+  const firstHalf = played.slice(0, half), secondHalf = played.slice(half);
+  const avg = arr => arr.length ? arr.reduce((s,g)=>s+g.matchRating,0)/arr.length : null;
+  const firstAvg = avg(firstHalf), secondAvg = avg(secondHalf);
+
+  const duelsWonTotal = played.reduce((s,g)=>s+(g.raw.duelsWon||0),0);
+  const duelsLostTotal = played.reduce((s,g)=>s+(g.raw.duelsLost||0),0);
+  const duelsWinPct = duelsWonTotal+duelsLostTotal>0 ? (duelsWonTotal/(duelsWonTotal+duelsLostTotal)*100) : null;
+
+  const attrs = Object.entries(data.player.attributes);
+  const lagging = attrs.reduce((min,[k,a])=> (!min || a.rating<min[1].rating) ? [k,a] : min, null);
+
+  wrap.innerHTML = `
+    <div class="row"><span class="muted" style="flex:2;">Сыграно / пропущено (травма·болезнь)</span><b>${played.length} / ${missedCount}</b></div>
+    <div class="row"><span class="muted" style="flex:2;">Средняя оценка за матч (сезон)</span><b>${avgRating.toFixed(1)}</b></div>
+    <div class="row"><span class="muted" style="flex:2;">Средняя оценка: 1-я половина сезона → 2-я</span><b>${firstAvg?firstAvg.toFixed(1):'—'} → ${secondAvg?secondAvg.toFixed(1):'—'}</b></div>
+    <div class="row"><span class="muted" style="flex:2;">% выигранных единоборств за сезон</span><b>${duelsWinPct!==null?duelsWinPct.toFixed(0)+'%':'—'}</b></div>
+    <div class="row"><span class="muted" style="flex:2;">Самый отстающий навык сейчас</span><b>${icon(lagging[0])} ${ATTR_DEFS[lagging[0]].label} (${lagging[1].rating})</b></div>
+  `;
+}
+
+// ================= RENDER: ADD GAME =================
+function renderGame(){
+  const el = document.getElementById('tab-game');
+  el.innerHTML = `
+    <div class="card">
+      <h2>Внести игру</h2>
+      <div class="row">
+        <div class="field"><label class="f">Дата</label><input type="date" id="g-date"></div>
+        <div class="field"><label class="f">Соперник</label><input id="g-opp" placeholder="Название команды"></div>
+      </div>
+      <div class="row">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;">
+          <input type="checkbox" id="g-missed" style="width:auto; flex:none;">
+          Пропущено — травма/болезнь (статы не считаются, рейтинг не трогаем)
+        </label>
+      </div>
+
+      <fieldset class="stat-fieldset"><legend>${icon('skating',14)} Катание</legend>
+        <div class="row">
+          <div class="field"><label class="f">Забеги за шайбой выиграно</label><input type="number" min="0" id="f-racesWon" value="0"></div>
+          <div class="field"><label class="f">Забеги за шайбой проиграно</label><input type="number" min="0" id="f-racesLost" value="0"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label class="f">Обыграли на скорости</label><input type="number" min="0" id="f-beatenOnSpeed" value="0"></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="stat-fieldset"><legend>${icon('dribbling',14)} Дриблинг</legend>
+        <div class="row">
+          <div class="field"><label class="f">Успешные обводки</label><input type="number" min="0" id="f-successfulDekes" value="0"></div>
+          <div class="field"><label class="f">Неудачные обводки</label><input type="number" min="0" id="f-failedDekes" value="0"></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="stat-fieldset"><legend>${icon('shooting',14)} Бросок</legend>
+        <div class="row">
+          <div class="field"><label class="f">Голы</label><input type="number" min="0" id="f-goals" value="0"></div>
+          <div class="field"><label class="f">Броски в створ</label><input type="number" min="0" id="f-shotsOnTarget" value="0"></div>
+          <div class="field"><label class="f">Броски всего</label><input type="number" min="0" id="f-shotsTotal" value="0"></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="stat-fieldset"><legend>${icon('iq',14)} Игровой интеллект</legend>
+        <div class="row">
+          <div class="field"><label class="f">Голевые передачи</label><input type="number" min="0" id="f-assists" value="0"></div>
+          <div class="field"><label class="f">Потери шайбы</label><input type="number" min="0" id="f-turnovers" value="0"></div>
+          <div class="field"><label class="f">Принятие решений (1–10)</label><input type="number" min="1" max="10" id="f-decisions" value="5"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label class="f">Не успел вернуться в оборону</label><input type="number" min="0" id="f-lateReturns" value="0"></div>
+          <div class="field"><label class="f">+/- на льду</label><input type="number" min="-5" max="5" id="f-plusMinus" value="0"></div>
+          <div class="field"><label class="f">Явные моменты созданы</label><input type="number" min="0" id="f-chancesCreated" value="0"></div>
+        </div>
+      </fieldset>
+
+      <fieldset class="stat-fieldset"><legend>${icon('battle',14)} Борьба</legend>
+        <div class="row">
+          <div class="field"><label class="f">Единоборства выиграно</label><input type="number" min="0" id="f-duelsWon" value="0"></div>
+          <div class="field"><label class="f">Единоборства проиграно</label><input type="number" min="0" id="f-duelsLost" value="0"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label class="f">Отборы</label><input type="number" min="0" id="f-takeaways" value="0"></div>
+          <div class="field"><label class="f">Штрафы</label><input type="number" min="0" id="f-penalties" value="0"></div>
+        </div>
+      </fieldset>
+
+      ${getRosterNames().length>0 ? `
+      <fieldset class="stat-fieldset"><legend>Протокол матча — кто ещё забил и отдал</legend>
+        <div id="scoresheet"></div>
+      </fieldset>` : `<p class="muted stat-fieldset">Добавь состав в «Моей команде», чтобы отмечать статы одноклубников.</p>`}
+
+      <button class="primary" id="save-game">Сохранить игру и обновить рейтинг</button>
+    </div>
+    <div id="game-history"></div>
+  `;
+  document.getElementById('g-date').valueAsDate = new Date();
+  document.getElementById('g-missed').onchange = (e)=>{
+    document.querySelectorAll('.stat-fieldset').forEach(f=> f.style.display = e.target.checked ? 'none' : '');
+  };
+
+  const teammateFields = ['goals','assists','plusMinus','penalties'];
+  const teammateLabels = {goals:'Г', assists:'П', plusMinus:'+/-', penalties:'Штр'};
+  const scoresheet = {};
+  getRosterNames().forEach(name=> scoresheet[name] = {goals:0, assists:0, plusMinus:0, penalties:0});
+  const sheetEl = document.getElementById('scoresheet');
+  function renderSheet(){
+    if(!sheetEl) return;
+    sheetEl.innerHTML = Object.entries(scoresheet).map(([name,s])=>`
+      <div class="row" style="align-items:center;">
+        <span style="flex:2; font-size:13px;">${name}</span>
+        ${teammateFields.map(f=>`<div class="stat-counter"><button data-sh-dec="${name}|${f}">−</button><span>${teammateLabels[f]} ${s[f]}</span><button data-sh-inc="${name}|${f}">+</button></div>`).join('')}
+      </div>`).join('');
+    sheetEl.querySelectorAll('[data-sh-inc]').forEach(b=>b.onclick=()=>{ const [n,k]=b.dataset.shInc.split('|'); scoresheet[n][k]++; renderSheet(); });
+    sheetEl.querySelectorAll('[data-sh-dec]').forEach(b=>b.onclick=()=>{ const [n,k]=b.dataset.shDec.split('|'); scoresheet[n][k]--; renderSheet(); });
+  }
+  renderSheet();
+
+  document.getElementById('save-game').onclick = ()=>{
+    const date = document.getElementById('g-date').value || todayStr();
+    const opponent = document.getElementById('g-opp').value.trim() || '—';
+    const missed = document.getElementById('g-missed').checked;
+
+    if(missed){
+      data.games.push({id:uid(), date, opponent, missed:true, raw:null, xpGained:null, matchRating:null, ovrAfter: ovr(), scoresheet:[]});
+      data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+      saveData(); renderPlayer(); renderGame();
+      alert('Игра отмечена как пропущенная — рейтинги не изменились.');
+      return;
+    }
+
+    const raw = {};
+    ['racesWon','racesLost','beatenOnSpeed','successfulDekes','failedDekes','goals','shotsOnTarget','shotsTotal',
+     'assists','turnovers','decisions','lateReturns','plusMinus','chancesCreated',
+     'duelsWon','duelsLost','takeaways','penalties'].forEach(k=>{
+      raw[k] = parseFloat(document.getElementById('f-'+k).value)||0;
+    });
+
+    const xpGained = {};
+    Object.entries(XP_WEIGHTS).forEach(([attrKey, fields])=>{
+      let xp = 0;
+      Object.entries(fields).forEach(([fieldKey, weight])=>{
+        const v = raw[fieldKey];
+        xp += SUBJECTIVE_FIELDS.has(fieldKey) ? (v-5)*weight : v*weight;
+      });
+      xpGained[attrKey] = xp;
+      applyXp(attrKey, xp);
+    });
+
+    // Derived penalty: shots on target that did NOT become a goal — the honest fix
+    // for "shoots a lot, never scores" without inventing a fake xG input field.
+    const unconverted = Math.max(0, raw.shotsOnTarget - raw.goals);
+    const conversionPenalty = -unconverted * SHOT_CONVERSION_PENALTY;
+    xpGained.shooting += conversionPenalty;
+    applyXp('shooting', conversionPenalty);
+
+    const totalXp = Object.values(xpGained).reduce((s,v)=>s+v,0);
+    const matchRating = Math.max(1, Math.min(10, MATCH_RATING_BASE + totalXp*MATCH_RATING_SCALE));
+
+    recordOvrSnapshot(date);
+    const scoresheetEntry = Object.entries(scoresheet).filter(([n,s])=>s.goals||s.assists||s.plusMinus||s.penalties);
+    data.games.push({id:uid(), date, opponent, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry});
+    data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+
+    // hot-streak bonus: every HOT_STREAK_LEN consecutive played games rated >= threshold
+    const played = data.games.filter(g=>!g.missed);
+    let streakLen = 0;
+    for(let i=played.length-1; i>=0; i--){
+      if(played[i].matchRating >= HOT_STREAK_THRESHOLD) streakLen++; else break;
+    }
+    let bonusMsg = '';
+    if(streakLen>0 && streakLen % HOT_STREAK_LEN === 0){
+      Object.keys(data.player.attributes).forEach(k=>applyXp(k, HOT_STREAK_BONUS));
+      bonusMsg = `\n🔥 Серия из ${streakLen} игр с оценкой ≥${HOT_STREAK_THRESHOLD} — бонус +${HOT_STREAK_BONUS} XP во все навыки!`;
+    }
+
+    saveData();
+    renderPlayer();
+    renderGame();
+    alert(`Игра сохранена. Оценка за матч: ${matchRating.toFixed(1)}.${bonusMsg}`);
+  };
+  renderGameHistory();
+}
+
+function renderGameHistory(){
+  const wrap = document.getElementById('game-history');
+  if(data.games.length===0){ wrap.innerHTML=''; return; }
+  const rows = [...data.games].reverse().slice(0,20).map(g=>{
+    if(g.missed){
+      return `<li><span>${g.date} · ${g.opponent}<br><span class="muted">🩹 пропущено — травма/болезнь</span></span><span class="pill">не считается</span></li>`;
+    }
+    const chips = Object.entries(g.xpGained).map(([k,v])=>{
+      const sign = v>=0?'+':'';
+      const color = v>=0 ? 'var(--pos)' : 'var(--neg)';
+      return `<span class="pill" style="color:${color}">${icon(k)} ${sign}${v.toFixed(1)}</span>`;
+    }).join(' ');
+    const sheet = (g.scoresheet||[]).map(([n,s])=>`${n}: ${s.goals}Г ${s.assists}П ${s.plusMinus>=0?'+':''}${s.plusMinus} ${s.penalties}Штр`).join(', ');
+    return `<li><span>${g.date} · ${g.opponent}<br><span class="muted">${chips}</span>${sheet?`<br><span class="muted">${sheet}</span>`:''}</span><span class="pill">Оценка ${g.matchRating.toFixed(1)}</span></li>`;
+  }).join('');
+  wrap.innerHTML = `<div class="card"><h2>Последние игры</h2><ul class="list">${rows}</ul></div>`;
+}
+
+// ================= RENDER: MATCHES (sortable full list) =================
+let matchesSortState = { key: 'date', dir: 'desc' };
+function renderMatches(){
+  const el = document.getElementById('tab-matches');
+  const cols = [
+    {key:'date', label:'Дата'}, {key:'opponent', label:'Соперник'}, {key:'matchRating', label:'Оценка'},
+    {key:'skating', label:icon('skating')+' Катание'}, {key:'dribbling', label:icon('dribbling')+' Дриблинг'}, {key:'shooting', label:icon('shooting')+' Бросок'},
+    {key:'iq', label:icon('iq')+' Интеллект'}, {key:'battle', label:icon('battle')+' Борьба'},
+  ];
+  function valueFor(g, key){
+    if(key==='date') return g.date;
+    if(key==='opponent') return g.opponent;
+    if(key==='matchRating') return g.missed ? -Infinity : g.matchRating;
+    return g.missed ? -Infinity : (g.xpGained[key]||0);
+  }
+  const sorted = [...data.games].sort((a,b)=>{
+    const va = valueFor(a, matchesSortState.key), vb = valueFor(b, matchesSortState.key);
+    const cmp = typeof va==='string' ? va.localeCompare(vb) : (va-vb);
+    return matchesSortState.dir==='asc' ? cmp : -cmp;
+  });
+  el.innerHTML = `
+    <div class="card">
+      <h2>Все матчи (${data.games.length})</h2>
+      <p class="muted">Нажми на заголовок столбца, чтобы отсортировать по возрастанию/убыванию.</p>
+      <div class="chart-wrap">
+        <table>
+          <thead><tr>${cols.map(c=>`<th data-sort="${c.key}" style="cursor:pointer;">${c.label}${matchesSortState.key===c.key?(matchesSortState.dir==='asc'?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${sorted.length===0 ? `<tr><td colspan="${cols.length}" class="empty">Пока нет матчей</td></tr>` : sorted.map(g=>{
+              if(g.missed) return `<tr><td>${g.date}</td><td>${g.opponent}</td><td colspan="${cols.length-2}" class="muted">🩹 пропущено</td></tr>`;
+              return `<tr>
+                <td>${g.date}</td><td>${g.opponent}</td>
+                <td><span class="pill">${g.matchRating.toFixed(1)}</span></td>
+                ${['skating','dribbling','shooting','iq','battle'].map(k=>{
+                  const v=g.xpGained[k]||0;
+                  return `<td style="color:${v>=0?'var(--pos)':'var(--neg)'}">${v>=0?'+':''}${v.toFixed(1)}</td>`;
+                }).join('')}
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  el.querySelectorAll('[data-sort]').forEach(th=>th.onclick=()=>{
+    const key = th.dataset.sort;
+    if(matchesSortState.key===key) matchesSortState.dir = matchesSortState.dir==='asc'?'desc':'asc';
+    else matchesSortState = {key, dir:'desc'};
+    renderMatches();
+  });
+}
+
+// ================= RENDER: MY TEAM (rink lineup) =================
+let teamSelectedLine = 'line1';
+function renderTeam(){
+  const el = document.getElementById('tab-team');
+  const tabs = [...LINE_GROUPS.map(g=>({id:g.id,label:g.label})), {id:'stats', label:'Статистика'}];
+  const group = LINE_GROUPS.find(g=>g.id===teamSelectedLine);
+
+  if(teamSelectedLine==='stats'){
+    const agg = {};
+    data.games.forEach(g=>{
+      (g.scoresheet||[]).forEach(([name,s])=>{
+        if(!agg[name]) agg[name] = {goals:0, assists:0, plusMinus:0, penalties:0};
+        agg[name].goals += s.goals; agg[name].assists += s.assists;
+        agg[name].plusMinus += s.plusMinus; agg[name].penalties += s.penalties;
+      });
+    });
+    const rows = Object.entries(agg).sort((a,b)=>b[1].goals-a[1].goals);
+    el.innerHTML = `
+      <div class="card">
+        <h2>Моя команда</h2>
+        <div class="line-tabs">
+          ${tabs.map(t=>`<button class="line-tab ${t.id===teamSelectedLine?'active':''}" data-line="${t.id}">${t.label}</button>`).join('')}
+        </div>
+        <h2 style="margin-top:14px;">Статистика команды (из внесённых матчей)</h2>
+        <div class="chart-wrap">
+          <table>
+            <thead><tr><th>Игрок</th><th>Голы</th><th>Передачи</th><th>+/-</th><th>Штрафы</th></tr></thead>
+            <tbody>
+              ${rows.length===0 ? `<tr><td colspan="5" class="empty">Пока нет данных — вноси статы одноклубников во вкладке «Внести игру»</td></tr>` : rows.map(([name,s])=>`
+                <tr><td>${name}</td><td>${s.goals}</td><td>${s.assists}</td><td style="color:${s.plusMinus>=0?'var(--pos)':'var(--neg)'}">${s.plusMinus>=0?'+':''}${s.plusMinus}</td><td>${s.penalties}</td></tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    el.querySelectorAll('[data-line]').forEach(b=>b.onclick=()=>{ teamSelectedLine = b.dataset.line; renderTeam(); });
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Моя команда</h2>
+      <p class="muted">Собери составы сам — тройки, пары защиты, вратарь. Это твоё пространство: можно вписать друзей, одноклубников или любимых игроков НХЛ. Этот же список появится в «Внести игру», чтобы отмечать, кто ещё забил или отдал.</p>
+      <div class="line-tabs">
+        ${tabs.map(t=>`<button class="line-tab ${t.id===teamSelectedLine?'active':''}" data-line="${t.id}">${t.label}</button>`).join('')}
+      </div>
+      <div class="halfrink">
+        <div class="halfrink-crease"></div>
+        <div class="halfrink-circle" style="left:12%;"></div>
+        <div class="halfrink-circle" style="left:88%;"></div>
+        ${group.slots.map(s=>`
+          <div class="rink-slot ${data.lineup[s.id]?'filled':''}" data-slot="${s.id}" style="top:${s.top}; left:${s.left};">
+            <div class="rink-slot-pos">${s.pos}</div>
+            <div class="rink-slot-name">${data.lineup[s.id] || '+'}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  el.querySelectorAll('[data-line]').forEach(b=>b.onclick=()=>{ teamSelectedLine = b.dataset.line; renderTeam(); });
+  el.querySelectorAll('[data-slot]').forEach(slotEl=>slotEl.onclick=()=>{
+    const id = slotEl.dataset.slot;
+    const current = data.lineup[id] || '';
+    const name = prompt('Имя игрока (оставь пустым, чтобы убрать):', current);
+    if(name===null) return;
+    if(name.trim()==='') delete data.lineup[id];
+    else data.lineup[id] = name.trim();
+    saveData(); renderTeam();
+  });
+}
+
+// ================= RENDER: TRAINING CHECKLIST =================
+function renderTraining(){
+  const el = document.getElementById('tab-training');
+  const activeTasks = TRAINING_TASKS.filter(t=>t.level<=data.trainingLevel);
+  const draft = {};
+  activeTasks.forEach(t=> draft[t.id]=0);
+
+  function totalMarks(){ return Object.values(draft).reduce((s,v)=>s+v,0); }
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Тренировочный чек-лист (уровень ${data.trainingLevel})</h2>
+      <p class="muted">Максимум ${MAX_MARKS_PER_SESSION} отметки за тренировку — как на листе на стене. Отмечай только то, что было реальным действием.</p>
+      <div class="row"><div class="field"><label class="f">Дата тренировки</label><input type="date" id="tr-date"></div></div>
+      <div id="training-checklist"></div>
+      <div class="muted" id="training-total" style="margin:8px 0;"></div>
+      <button class="primary" id="save-training">Сохранить тренировку</button>
+    </div>
+    <div id="training-history"></div>
+  `;
+  document.getElementById('tr-date').valueAsDate = new Date();
+
+  function renderChecklist(){
+    const listEl = document.getElementById('training-checklist');
+    listEl.innerHTML = activeTasks.map(t=>`
+      <div class="row" style="align-items:center;">
+        <span style="flex:2; font-size:13px;">${icon(t.attr)} ${t.name}</span>
+        <div class="stat-counter">
+          <button data-tr-dec="${t.id}">−</button><span id="tr-val-${t.id}">${draft[t.id]}</span>
+          <button data-tr-inc="${t.id}" ${totalMarks()>=MAX_MARKS_PER_SESSION?'disabled':''}>+</button>
+        </div>
+      </div>`).join('');
+    document.getElementById('training-total').textContent = `Отмечено: ${totalMarks()} / ${MAX_MARKS_PER_SESSION}`;
+    listEl.querySelectorAll('[data-tr-inc]').forEach(b=>b.onclick=()=>{
+      if(totalMarks()>=MAX_MARKS_PER_SESSION) return;
+      draft[b.dataset.trInc]++; renderChecklist();
+    });
+    listEl.querySelectorAll('[data-tr-dec]').forEach(b=>b.onclick=()=>{
+      const id=b.dataset.trDec; draft[id]=Math.max(0,draft[id]-1); renderChecklist();
+    });
+  }
+  renderChecklist();
+
+  document.getElementById('save-training').onclick = ()=>{
+    const date = document.getElementById('tr-date').value || todayStr();
+    if(totalMarks()===0){ alert('Отметь хотя бы одно действие.'); return; }
+    if(data.trainingLog[date]){
+      alert('Эта дата уже внесена. Если это ошибка — удали запись в истории тренировок ниже и внеси заново.');
+      return;
+    }
+    data.trainingLog[date] = {};
+    activeTasks.forEach(t=>{
+      if(draft[t.id]>0){
+        data.trainingLog[date][t.id] = draft[t.id];
+        applyXp(t.attr, draft[t.id]*TRAINING_XP_PER_MARK);
+      }
+    });
+    saveData();
+    renderPlayer();
+    renderTraining();
+    alert('Тренировка сохранена.');
+  };
+  renderTrainingHistory();
+}
+
+function renderTrainingHistory(){
+  const wrap = document.getElementById('training-history');
+  const entries = Object.entries(data.trainingLog).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,15);
+  if(entries.length===0){ wrap.innerHTML=''; return; }
+  const rows = entries.map(([date, marks])=>{
+    const parts = Object.entries(marks).map(([tid,count])=>{
+      const t = TRAINING_TASKS.find(t=>t.id===tid);
+      return t ? `${t.name} ×${count}` : '';
+    }).filter(Boolean).join(', ');
+    return `<li><span>${date}<br><span class="muted">${parts}</span></span><button class="icon-btn" data-del-training="${date}">✕</button></li>`;
+  }).join('');
+  wrap.innerHTML = `<div class="card"><h2>История тренировок</h2><ul class="list">${rows}</ul></div>`;
+  wrap.querySelectorAll('[data-del-training]').forEach(b=>b.onclick=()=>{
+    const date = b.dataset.delTraining;
+    const marks = data.trainingLog[date];
+    Object.entries(marks).forEach(([tid,count])=>{
+      const t = TRAINING_TASKS.find(t=>t.id===tid);
+      if(t) applyXp(t.attr, -count*TRAINING_XP_PER_MARK);
+    });
+    delete data.trainingLog[date];
+    saveData(); renderPlayer(); renderTraining();
+  });
+}
+
+// ================= RENDER: TASKS =================
+function renderTasks(){
+  const el = document.getElementById('tab-tasks');
+  const monday = mondayOf(todayStr());
+  const weekDates = Array.from({length:7}, (_,i)=>{
+    const d = new Date(monday); d.setDate(d.getDate()+i);
+    return d.toISOString().slice(0,10);
+  });
+
+  const now = new Date();
+  const curMonthKey = now.toISOString().slice(0,7);
+  const curYear = String(now.getFullYear());
+  let monthTotal = 0, yearTotal = 0;
+  Object.entries(data.taskLog).forEach(([date, entries])=>{
+    const sum = Object.values(entries).filter(e=>e.status==='done').reduce((s,e)=>s+e.points,0);
+    if(date.startsWith(curMonthKey)) monthTotal += sum;
+    if(date.startsWith(curYear)) yearTotal += sum;
+  });
+  data.bonusLedger.forEach(b=>{
+    if(b.date.startsWith(curMonthKey)) monthTotal += b.points;
+    if(b.date.startsWith(curYear)) yearTotal += b.points;
+  });
+
+  function milestoneBlock(period, total){
+    const list = data.milestones[period].slice().sort((a,b)=>a.threshold-b.threshold);
+    const next = list.find(m=>total < m.threshold);
+    const pct = next ? Math.min(100, total/next.threshold*100) : 100;
+    return `
+      <div class="progress-wrap">
+        <div class="progress-label"><span>${period==='monthly'?'За месяц':'За год'}</span><span>${total} ${next?('/ '+next.threshold):''}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="milestone-list">
+        ${list.map(m=>`<div class="m-item ${total>=m.threshold?'done':''}">
+          <span>${total>=m.threshold?'✓ ':''}${m.threshold} очков</span><span>${m.reward}</span>
+        </div>`).join('') || '<div class="empty">Нет заданных майлстоунов</div>'}
+      </div>
+    `;
+  }
+
+  // pending confirmations across the whole log (parent-only)
+  const pendingList = [];
+  Object.entries(data.taskLog).forEach(([date, entries])=>{
+    Object.entries(entries).forEach(([taskId, e])=>{
+      if(e.status==='pending'){
+        const task = data.tasks.find(t=>t.id===taskId);
+        pendingList.push({date, taskId, task});
+      }
+    });
+  });
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="goal-box" style="margin-bottom:0;">
+        🔥 Стрик: <b>${data.habit.perfectWeeks} ${data.habit.perfectWeeks===1?'неделя':'недель'} без пропусков подряд</b>
+        <br><span class="muted" style="font-size:12px;">Идеальная неделя = +15 очков. 2-3 недели подряд = +30/неделю. 4+ недель подряд = +45/неделю.</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Прогресс к наградам</h2>
+      ${milestoneBlock('monthly', monthTotal)}
+      <div style="height:10px"></div>
+      ${milestoneBlock('yearly', yearTotal)}
+    </div>
+
+    ${parentUnlocked && pendingList.length>0 ? `
+    <div class="card">
+      <h2>Ожидают подтверждения</h2>
+      <ul class="list" id="pending-list">
+        ${pendingList.map(p=>`<li><span>${p.date} · ${p.task?p.task.name:'?'}</span>
+          <span><button class="ghost" data-confirm="${p.date}|${p.taskId}">✓ Подтвердить</button>
+          <button class="icon-btn" data-reject="${p.date}|${p.taskId}">✕</button></span></li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    <div class="card">
+      <h2>Эта неделя <span class="muted" style="text-transform:none; font-weight:400; font-size:11px;">— сегодня ${DAY_LABELS[weekdayIndex(todayStr())]}, ${todayStr()}</span></h2>
+      <div class="week-grid" id="week-grid"></div>
+    </div>
+
+    ${parentUnlocked ? `
+    <div class="card">
+      <h2>Список заданий (родительский режим)</h2>
+      <div class="row">
+        <input id="task-name" placeholder="Название задания">
+        <input id="task-points" type="number" min="1" placeholder="Баллы" style="max-width:90px" value="1">
+        <select id="task-attr" style="max-width:170px">
+          <option value="">Без навыка (только баллы)</option>
+          ${Object.entries(ATTR_DEFS).map(([k,d])=>`<option value="${k}">${d.label}</option>`).join('')}
+        </select>
+        <input id="task-skillxp" type="number" min="0" step="0.1" placeholder="XP навыку" style="max-width:100px" value="1">
+      </div>
+      <div class="row" id="task-days"></div>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
+        <input type="checkbox" id="task-confirm" style="width:auto; flex:none;">
+        Требовать подтверждение родителя (для важных/редких заданий — не для ежедневных привычек)
+      </label>
+      <button class="primary" id="add-task">Добавить задание</button>
+      <ul class="list" id="task-list" style="margin-top:10px;"></ul>
+    </div>` : ''}
+  `;
+
+  if(parentUnlocked){
+    document.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>{
+      const [date, taskId] = b.dataset.confirm.split('|');
+      data.taskLog[date][taskId].status = 'done';
+      const task = data.tasks.find(t=>t.id===taskId);
+      if(task && task.attr) applyXp(task.attr, task.skillXp ?? TASK_XP);
+      saveData(); renderTasks(); renderPlayer();
+    });
+    document.querySelectorAll('[data-reject]').forEach(b=>b.onclick=()=>{
+      const [date, taskId] = b.dataset.reject.split('|');
+      delete data.taskLog[date][taskId];
+      saveData(); renderTasks();
+    });
+  }
+
+  if(parentUnlocked){
+    const daysWrap = document.getElementById('task-days');
+    const selectedDays = new Set();
+    DAY_LABELS.forEach((lbl,i)=>{
+      const b = document.createElement('button');
+      b.className='daybtn'; b.textContent=lbl; b.type='button';
+      b.onclick = ()=>{ b.classList.toggle('on'); selectedDays.has(i)?selectedDays.delete(i):selectedDays.add(i); };
+      daysWrap.appendChild(b);
+    });
+    document.getElementById('add-task').onclick = ()=>{
+      const name = document.getElementById('task-name').value.trim();
+      const points = parseInt(document.getElementById('task-points').value)||1;
+      const attr = document.getElementById('task-attr').value || null;
+      const skillXp = parseFloat(document.getElementById('task-skillxp').value);
+      const confirmRequired = document.getElementById('task-confirm').checked;
+      if(!name || selectedDays.size===0){ alert('Укажи название и хотя бы один день недели'); return; }
+      data.tasks.push({id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired});
+      saveData(); renderTasks();
+    };
+
+    const taskList = document.getElementById('task-list');
+    if(data.tasks.length===0){ taskList.innerHTML = '<li class="empty">Пока нет заданий</li>'; }
+    data.tasks.forEach(t=>{
+      const li=document.createElement('li');
+      const attrPill = t.attr ? `<span class="pill">${icon(t.attr)} ${ATTR_DEFS[t.attr].label}</span>` : '';
+      const confirmPill = t.confirmRequired ? `<span class="pill">требует подтверждения</span>` : '';
+      li.innerHTML = `<span>${t.name} <span class="pill">${t.points} б.</span> ${attrPill} ${confirmPill} <span class="pill">${t.days.map(d=>DAY_LABELS[d]).join(' ')}</span></span>
+        <button class="icon-btn" data-del-task="${t.id}">✕</button>`;
+      taskList.appendChild(li);
+    });
+    taskList.querySelectorAll('[data-del-task]').forEach(b=>b.onclick=()=>{
+      data.tasks = data.tasks.filter(t=>t.id!==b.dataset.delTask);
+      saveData(); renderTasks();
+    });
+  }
+
+  // week grid — always visible and interactive (this is Samir's checklist)
+  const grid = document.getElementById('week-grid');
+  grid.innerHTML = `<div></div>` + DAY_LABELS.map(l=>`<div class="hcell">${l}</div>`).join('');
+  if(data.tasks.length===0){
+    grid.innerHTML += `<div class="empty" style="grid-column:1/-1;">Пока нет заданий</div>`;
+  }
+  data.tasks.forEach(t=>{
+    grid.innerHTML += `<div class="taskname">${t.attr?icon(t.attr)+' ':''}${t.name}</div>`;
+    weekDates.forEach((dateStr, dayIdx)=>{
+      if(!t.days.includes(dayIdx)){ grid.innerHTML += '<div></div>'; return; }
+      const entry = data.taskLog[dateStr] && data.taskLog[dateStr][t.id];
+      const cls = entry ? (entry.status==='done' ? 'on' : '') : '';
+      const mark = entry ? (entry.status==='done' ? '✓' : '⏳') : '';
+      grid.innerHTML += `<div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''}" data-toggle="${dateStr}|${t.id}">${mark}</div>`;
+    });
+  });
+  grid.querySelectorAll('[data-toggle]').forEach(c=>c.onclick=()=>{
+    const [dateStr, taskId] = c.dataset.toggle.split('|');
+    const task = data.tasks.find(t=>t.id===taskId);
+    if(!data.taskLog[dateStr]) data.taskLog[dateStr] = {};
+    const existing = data.taskLog[dateStr][taskId];
+    if(existing){
+      // undo — allowed for both pending (Samir can cancel his own mark) and done (only meaningful if parent unlocked, but keep simple: anyone can uncheck)
+      if(existing.status==='done' && task.attr) applyXp(task.attr, -(task.skillXp ?? TASK_XP));
+      delete data.taskLog[dateStr][taskId];
+    } else if(task.confirmRequired){
+      data.taskLog[dateStr][taskId] = {status:'pending', points: task.points};
+    } else {
+      data.taskLog[dateStr][taskId] = {status:'done', points: task.points};
+      if(task.attr) applyXp(task.attr, task.skillXp ?? TASK_XP);
+    }
+    saveData(); renderTasks(); renderPlayer();
+  });
+}
+
+// ================= RENDER: SETTINGS =================
+function renderSettings(){
+  const el = document.getElementById('tab-settings');
+  if(!parentUnlocked){
+    el.innerHTML = `<div class="card">
+      <h2>Настройки закрыты</h2>
+      <p class="muted">Здесь управление заданиями, тренировочными уровнями и наградами — доступно только родителю.</p>
+      <button class="primary" id="settings-unlock">🔒 Ввести PIN</button>
+    </div>`;
+    document.getElementById('settings-unlock').onclick = ()=> requireParentUnlock();
+    return;
+  }
+  el.innerHTML = `
+    <div class="card">
+      <h2>Имя игрока</h2>
+      <div class="row"><input id="s-name" value="${data.player.name}"><button class="primary" id="s-save-name">Сохранить</button></div>
+    </div>
+    <div class="card">
+      <h2>PIN родителя</h2>
+      <div class="row"><input id="s-pin" value="${data.parentPin}" maxlength="8"><button class="primary" id="s-save-pin">Сохранить PIN</button></div>
+    </div>
+    <div class="card">
+      <h2>Майлстоуны за месяц</h2>
+      <p class="muted">Рекомендованные уровни (Голд 100 / Платина 140 / Супернова 160, посчитаны от реального потолка месяца) можно загрузить одной кнопкой вместо ручного ввода.</p>
+      <button class="ghost" id="load-recommended" style="margin-bottom:10px;">Загрузить рекомендованные уровни</button>
+      <div class="row">
+        <input id="mm-threshold" type="number" placeholder="Порог очков" style="max-width:130px">
+        <input id="mm-reward" placeholder="Награда">
+        <button class="primary" id="mm-add">Добавить</button>
+      </div>
+      <ul class="list" id="mm-list"></ul>
+    </div>
+    <div class="card">
+      <h2>Майлстоуны за год</h2>
+      <div class="row">
+        <input id="my-threshold" type="number" placeholder="Порог очков" style="max-width:130px">
+        <input id="my-reward" placeholder="Награда">
+        <button class="primary" id="my-add">Добавить</button>
+      </div>
+      <ul class="list" id="my-list"></ul>
+    </div>
+    <div class="card">
+      <h2>Уровень тренировочного чек-листа</h2>
+      <p class="muted">Переход на новый уровень — твоё решение (или совместное с Самиром), не автоматика. Текущий: уровень ${data.trainingLevel} из 3.</p>
+      <div class="row">
+        <button class="ghost" id="level-down" ${data.trainingLevel<=1?'disabled':''}>← Понизить</button>
+        <button class="primary" id="level-up" ${data.trainingLevel>=3?'disabled':''}>Открыть уровень ${data.trainingLevel+1} →</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Стартовые рейтинги навыков</h2>
+      <p class="muted">Меняй, только если нужно скорректировать текущие значения вручную (не влияет на прошлые игры).</p>
+      <div class="row" id="attr-edit"></div>
+      <button class="primary" id="attr-save">Сохранить рейтинги</button>
+    </div>
+  `;
+  document.getElementById('level-up').onclick = ()=>{ data.trainingLevel = Math.min(3, data.trainingLevel+1); saveData(); renderSettings(); renderTraining(); };
+  document.getElementById('level-down').onclick = ()=>{ data.trainingLevel = Math.max(1, data.trainingLevel-1); saveData(); renderSettings(); renderTraining(); };
+
+  document.getElementById('s-save-pin').onclick = ()=>{
+    const v = document.getElementById('s-pin').value.trim();
+    if(v){ data.parentPin = v; saveData(); alert('PIN обновлён.'); }
+  };
+  document.getElementById('s-save-name').onclick = ()=>{
+    data.player.name = document.getElementById('s-name').value.trim() || 'Игрок';
+    saveData(); renderAll();
+  };
+
+  function renderMilestoneList(period, listElId){
+    const listEl = document.getElementById(listElId);
+    listEl.innerHTML='';
+    data.milestones[period].forEach(m=>{
+      const li=document.createElement('li');
+      li.innerHTML = `<span>${m.threshold} — ${m.reward}</span><button class="icon-btn" data-del="${m.id}">✕</button>`;
+      listEl.appendChild(li);
+    });
+    listEl.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+      data.milestones[period] = data.milestones[period].filter(m=>m.id!==b.dataset.del);
+      saveData(); renderSettings();
+    });
+  }
+  renderMilestoneList('monthly','mm-list');
+  renderMilestoneList('yearly','my-list');
+
+  document.getElementById('load-recommended').onclick = ()=>{
+    if(!confirm('Заменить текущие майлстоуны на рекомендованные (Голд 100 / Платина 140 / Супернова 160, год 1200)? Текущие записи будут удалены.')) return;
+    data.milestones.monthly = RECOMMENDED_MILESTONES.monthly.map(m=>({id:uid(), ...m}));
+    data.milestones.yearly = RECOMMENDED_MILESTONES.yearly.map(m=>({id:uid(), ...m}));
+    saveData(); renderSettings();
+  };
+  document.getElementById('mm-add').onclick = ()=>{
+    const threshold = parseInt(document.getElementById('mm-threshold').value);
+    const reward = document.getElementById('mm-reward').value.trim();
+    if(!threshold || !reward) return;
+    data.milestones.monthly.push({id:uid(), threshold, reward});
+    saveData(); renderSettings();
+  };
+  document.getElementById('my-add').onclick = ()=>{
+    const threshold = parseInt(document.getElementById('my-threshold').value);
+    const reward = document.getElementById('my-reward').value.trim();
+    if(!threshold || !reward) return;
+    data.milestones.yearly.push({id:uid(), threshold, reward});
+    saveData(); renderSettings();
+  };
+
+  const attrEdit = document.getElementById('attr-edit');
+  attrEdit.innerHTML = Object.entries(data.player.attributes).map(([key,a])=>`
+    <div class="field"><label class="f">${icon(key)} ${ATTR_DEFS[key].label}</label>
+    <input type="number" min="20" max="99" id="ae-${key}" value="${a.rating}"></div>
+  `).join('');
+  document.getElementById('attr-save').onclick = ()=>{
+    Object.keys(data.player.attributes).forEach(key=>{
+      const v = parseInt(document.getElementById('ae-'+key).value);
+      if(v>=20 && v<=99) data.player.attributes[key].rating = v;
+    });
+    saveData(); renderAll();
+    alert('Рейтинги обновлены.');
+  };
+}
+
+// ================= RENDER ALL =================
+function renderAll(){
+  const lockBtn = document.getElementById('parent-lock-btn');
+  if(lockBtn) lockBtn.textContent = parentUnlocked ? '🔓 Режим родителя (вкл)' : '🔒 Режим родителя';
+  const fireNum = document.getElementById('fire-number-display');
+  if(fireNum) fireNum.textContent = data.player.jerseyNumber || '';
+  renderPlayer();
+  renderGame();
+  renderMatches();
+  renderTeam();
+  renderTraining();
+  renderTasks();
+  renderSettings();
+}
+
+loadData();
+</script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW failed', e)); });
+}
+</script>
+</body>
+</html>
