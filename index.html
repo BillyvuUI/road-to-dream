@@ -344,11 +344,11 @@ function defaultData(){
     }, ovrHistory:{} },
     games: [],
     tasks: [
-      {id:'t1', name:'Утренняя зарядка', points:1, attr:'fitness', skillXp:0.5, days:[0,1,2,3,4,5,6], confirmRequired:false},
-      {id:'t2', name:'Бокс', points:1, attr:'battle', skillXp:0.5, days:[0], confirmRequired:false},
-      {id:'t3', name:'ОФП', points:1, attr:'fitness', skillXp:1, days:[5,6], confirmRequired:false},
-      {id:'t4', name:'Баланс-борд 10 мин', points:1, attr:'skating', skillXp:1, days:[1,3], confirmRequired:false},
-      {id:'t5', name:'Дриблинг с клюшкой дома', points:1, attr:'dribbling', skillXp:1, days:[2,4], confirmRequired:false},
+      {id:'t1', name:'Утренняя зарядка', points:1, attr:'fitness', skillXp:0.5, days:[0,1,2,3,4,5,6], confirmRequired:false, active:true, startDate:null},
+      {id:'t2', name:'Бокс', points:1, attr:'battle', skillXp:0.5, days:[0], confirmRequired:false, active:true, startDate:null},
+      {id:'t3', name:'ОФП', points:1, attr:'fitness', skillXp:1, days:[5,6], confirmRequired:false, active:true, startDate:null},
+      {id:'t4', name:'Баланс-борд 10 мин', points:1, attr:'skating', skillXp:1, days:[1,3], confirmRequired:false, active:true, startDate:null},
+      {id:'t5', name:'Дриблинг с клюшкой дома', points:1, attr:'dribbling', skillXp:1, days:[2,4], confirmRequired:false, active:true, startDate:null},
     ],
     taskLog: {},
     milestones: {
@@ -423,6 +423,13 @@ function weekdayIndex(dateStr){ return (new Date(dateStr).getDay()+6)%7; } // 0=
 
 function mondayStr(dateStr){ return mondayOf(dateStr).toISOString().slice(0,10); }
 
+// Tasks Samir actually sees/counts on a given date: must be marked visible by the
+// parent, scheduled for that weekday, and (if scheduled to start later) already started.
+function tasksForDate(dateStr){
+  const weekday = weekdayIndex(dateStr);
+  return data.tasks.filter(t=> t.active!==false && t.days.includes(weekday) && (!t.startDate || dateStr>=t.startDate));
+}
+
 // Walks forward week-by-week (Mon-Sun) from the last settled week up to (not including)
 // the current week, checking whether every scheduled task-day that week was fully done.
 // Idempotent — safe to call on every load. Bonus goes to the rewards ledger, never to skill XP.
@@ -437,8 +444,7 @@ function settleWeeks(){
     const weekDates = Array.from({length:7}, (_,i)=>addDays(cursor, i));
     let perfect = true;
     weekDates.forEach(d=>{
-      const weekday = weekdayIndex(d);
-      const scheduled = data.tasks.filter(t=>t.days.includes(weekday));
+      const scheduled = tasksForDate(d);
       if(scheduled.length===0) return; // no tasks that day — neutral, doesn't break the week
       const closed = scheduled.every(t=> data.taskLog[d] && data.taskLog[d][t.id] && data.taskLog[d][t.id].status==='done');
       if(!closed) perfect = false;
@@ -553,8 +559,7 @@ function renderPlayer(){
 
   // today's tasks progress (left "daily objectives" style box)
   const todayStr_ = todayStr();
-  const todayWeekday = weekdayIndex(todayStr_);
-  const todayTasks = data.tasks.filter(t=>t.days.includes(todayWeekday));
+  const todayTasks = tasksForDate(todayStr_);
   const todayDone = todayTasks.filter(t=> data.taskLog[todayStr_] && data.taskLog[todayStr_][t.id] && data.taskLog[todayStr_][t.id].status==='done').length;
 
   // next reward (monthly milestone) for the right column
@@ -1149,6 +1154,7 @@ function renderTeam(){
 }
 
 // ================= RENDER: TRAINING CHECKLIST =================
+let trainingSelectedView = 'checklist';
 function renderTraining(){
   const el = document.getElementById('tab-training');
   const activeTasks = data.trainingTasks;
@@ -1157,8 +1163,27 @@ function renderTraining(){
 
   function totalMarks(){ return Object.values(draft).reduce((s,v)=>s+v,0); }
 
+  if(trainingSelectedView==='stats'){
+    el.innerHTML = `
+      <div class="card">
+        <div class="line-tabs">
+          <button class="line-tab" data-tv="checklist">Чек-лист</button>
+          <button class="line-tab active" data-tv="stats">Статистика</button>
+        </div>
+      </div>
+      <div id="training-stats"></div>
+    `;
+    el.querySelectorAll('[data-tv]').forEach(b=>b.onclick=()=>{ trainingSelectedView = b.dataset.tv; renderTraining(); });
+    renderTrainingStats();
+    return;
+  }
+
   el.innerHTML = `
     <div class="card">
+      <div class="line-tabs">
+        <button class="line-tab active" data-tv="checklist">Чек-лист</button>
+        <button class="line-tab" data-tv="stats">Статистика</button>
+      </div>
       <h2>Тренировочный чек-лист</h2>
       <p class="muted">Максимум ${MAX_MARKS_PER_SESSION} отметки за тренировку — как на листе на стене. Отмечай только то, что было реальным действием.</p>
       <div class="row"><div class="field"><label class="f">Дата тренировки</label><input type="date" id="tr-date"></div></div>
@@ -1181,8 +1206,8 @@ function renderTraining(){
     </div>` : ''}
 
     <div id="training-history"></div>
-    <div id="training-stats"></div>
   `;
+  el.querySelectorAll('[data-tv]').forEach(b=>b.onclick=()=>{ trainingSelectedView = b.dataset.tv; renderTraining(); });
   document.getElementById('tr-date').valueAsDate = new Date();
 
   if(parentUnlocked){
@@ -1252,7 +1277,6 @@ function renderTraining(){
     alert('Тренировка сохранена.');
   };
   renderTrainingHistory();
-  renderTrainingStats();
 }
 
 function renderTrainingHistory(){
@@ -1310,13 +1334,11 @@ function renderTrainingStats(){
 }
 
 // ================= RENDER: TASKS =================
+let tasksWeekOffset = 0; // 0 = this week, negative = past weeks, max +1 = next week
 function renderTasks(){
   const el = document.getElementById('tab-tasks');
-  const monday = mondayOf(todayStr());
-  const weekDates = Array.from({length:7}, (_,i)=>{
-    const d = new Date(monday); d.setDate(d.getDate()+i);
-    return d.toISOString().slice(0,10);
-  });
+  const viewedMonday = mondayStr(addDays(todayStr(), tasksWeekOffset*7));
+  const weekDates = Array.from({length:7}, (_,i)=> addDays(viewedMonday, i));
 
   const now = new Date();
   const curMonthKey = now.toISOString().slice(0,7);
@@ -1386,7 +1408,14 @@ function renderTasks(){
     </div>` : ''}
 
     <div class="card">
-      <h2>Эта неделя <span class="muted" style="text-transform:none; font-weight:400; font-size:11px;">— сегодня ${DAY_LABELS[weekdayIndex(todayStr())]}, ${todayStr()}</span></h2>
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <h2 style="margin:0;">${tasksWeekOffset===0?'Эта неделя':(tasksWeekOffset===1?'Следующая неделя':`Неделя ${viewedMonday}`)}</h2>
+        <div style="display:flex; gap:4px;">
+          <button class="ghost" id="week-prev" type="button">← Раньше</button>
+          <button class="ghost" id="week-next" type="button" ${tasksWeekOffset>=1?'disabled':''}>Позже →</button>
+        </div>
+      </div>
+      <div class="muted" style="font-size:11px; margin-bottom:8px;">Сегодня: ${DAY_LABELS[weekdayIndex(todayStr())]}, ${todayStr()}</div>
       <div class="week-grid" id="week-grid"></div>
     </div>
 
@@ -1403,9 +1432,13 @@ function renderTasks(){
         <input id="task-skillxp" type="number" min="0" step="0.1" placeholder="XP навыку" style="max-width:100px" value="1">
       </div>
       <div class="row" id="task-days"></div>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:6px; cursor:pointer;">
         <input type="checkbox" id="task-confirm" style="width:auto; flex:none;">
         Требовать подтверждение родителя (для важных/редких заданий — не для ежедневных привычек)
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
+        <input type="checkbox" id="task-nextweek" style="width:auto; flex:none;">
+        Начать со следующей недели (не показывать в текущей)
       </label>
       <button class="primary" id="add-task">Добавить задание</button>
       <ul class="list" id="task-list" style="margin-top:10px;"></ul>
@@ -1442,8 +1475,10 @@ function renderTasks(){
       const attr = document.getElementById('task-attr').value || null;
       const skillXp = parseFloat(document.getElementById('task-skillxp').value);
       const confirmRequired = document.getElementById('task-confirm').checked;
+      const nextWeek = document.getElementById('task-nextweek').checked;
       if(!name || selectedDays.size===0){ alert('Укажи название и хотя бы один день недели'); return; }
-      data.tasks.push({id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired});
+      const startDate = nextWeek ? mondayStr(addDays(todayStr(),7)) : null;
+      data.tasks.push({id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired, active:true, startDate});
       saveData(); renderTasks();
     };
 
@@ -1453,9 +1488,18 @@ function renderTasks(){
       const li=document.createElement('li');
       const attrPill = t.attr ? `<span class="pill">${icon(t.attr)} ${ATTR_DEFS[t.attr].label}</span>` : '';
       const confirmPill = t.confirmRequired ? `<span class="pill">требует подтверждения</span>` : '';
-      li.innerHTML = `<span>${t.name} <span class="pill">${t.points} б.</span> ${attrPill} ${confirmPill} <span class="pill">${t.days.map(d=>DAY_LABELS[d]).join(' ')}</span></span>
+      const startPill = t.startDate && t.startDate > todayStr() ? `<span class="pill">с ${t.startDate}</span>` : '';
+      li.innerHTML = `<label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1;">
+          <input type="checkbox" data-vis-task="${t.id}" ${t.active!==false?'checked':''} style="width:auto; flex:none;">
+          <span>${t.name} <span class="pill">${t.points} б.</span> ${attrPill} ${confirmPill} ${startPill} <span class="pill">${t.days.map(d=>DAY_LABELS[d]).join(' ')}</span></span>
+        </label>
         <button class="icon-btn" data-del-task="${t.id}">✕</button>`;
       taskList.appendChild(li);
+    });
+    taskList.querySelectorAll('[data-vis-task]').forEach(cb=>cb.onchange=()=>{
+      const task = data.tasks.find(t=>t.id===cb.dataset.visTask);
+      task.active = cb.checked;
+      saveData(); renderTasks();
     });
     taskList.querySelectorAll('[data-del-task]').forEach(b=>b.onclick=()=>{
       data.tasks = data.tasks.filter(t=>t.id!==b.dataset.delTask);
@@ -1463,20 +1507,26 @@ function renderTasks(){
     });
   }
 
+  document.getElementById('week-prev').onclick = ()=>{ tasksWeekOffset--; renderTasks(); };
+  document.getElementById('week-next').onclick = ()=>{ if(tasksWeekOffset<1) tasksWeekOffset++; renderTasks(); };
+
   // week grid — always visible and interactive (this is Samir's checklist)
   const grid = document.getElementById('week-grid');
   grid.innerHTML = `<div></div>` + DAY_LABELS.map(l=>`<div class="hcell">${l}</div>`).join('');
-  if(data.tasks.length===0){
+  const gridTasks = parentUnlocked ? data.tasks : data.tasks.filter(t=>t.active!==false);
+  if(gridTasks.length===0){
     grid.innerHTML += `<div class="empty" style="grid-column:1/-1;">Пока нет заданий</div>`;
   }
-  data.tasks.forEach(t=>{
-    grid.innerHTML += `<div class="taskname">${t.attr?icon(t.attr)+' ':''}${t.name}</div>`;
+  gridTasks.forEach(t=>{
+    grid.innerHTML += `<div class="taskname" style="${t.active===false?'opacity:.4;':''}">${t.attr?icon(t.attr)+' ':''}${t.name}${t.active===false?' <span class="pill">скрыто</span>':''}</div>`;
     weekDates.forEach((dateStr, dayIdx)=>{
       if(!t.days.includes(dayIdx)){ grid.innerHTML += '<div></div>'; return; }
+      const notStartedYet = t.startDate && dateStr < t.startDate;
+      if(notStartedYet){ grid.innerHTML += '<div class="chk" style="opacity:.15;">·</div>'; return; }
       const entry = data.taskLog[dateStr] && data.taskLog[dateStr][t.id];
       const cls = entry ? (entry.status==='done' ? 'on' : '') : '';
       const mark = entry ? (entry.status==='done' ? '✓' : '⏳') : '';
-      const editable = parentUnlocked || dateStr===todayStr();
+      const editable = (parentUnlocked || dateStr===todayStr()) && t.active!==false;
       grid.innerHTML += `<div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div>`;
     });
   });
@@ -1602,10 +1652,13 @@ function renderSettings(){
   document.getElementById('attr-save').onclick = ()=>{
     Object.keys(data.player.attributes).forEach(key=>{
       const v = parseInt(document.getElementById('ae-'+key).value);
-      if(v>=20 && v<=99) data.player.attributes[key].rating = v;
+      if(v>=20 && v<=99){
+        data.player.attributes[key].rating = v;
+        data.player.attributes[key].xp = 0; // manual override = start counting fresh from this number
+      }
     });
     saveData(); renderAll();
-    alert('Рейтинги обновлены.');
+    alert('Рейтинги обновлены, буфер опыта тоже сброшен в 0.');
   };
 }
 
