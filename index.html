@@ -314,16 +314,7 @@ const HOT_STREAK_LEN = 3;
 const HOT_STREAK_THRESHOLD = 7.0;
 const HOT_STREAK_BONUS = 4;
 const MAX_MARKS_PER_SESSION = 3; // training checklist: cap per session, mirrors the wall poster
-
-const TRAINING_TASKS = [
-  {id:'tr1', level:1, name:'Пошёл в отбор первым', attr:'battle'},
-  {id:'tr2', level:1, name:'Ускорился без шайбы', attr:'skating'},
-  {id:'tr3', level:2, name:'Вернулся в защиту не последним', attr:'fitness'},
-  {id:'tr4', level:2, name:'Пошёл в борьбу у борта', attr:'battle'},
-  {id:'tr5', level:3, name:'Догнал и отобрал шайбу', attr:'battle'},
-  {id:'tr6', level:3, name:'Активная игра в защите', attr:'fitness'},
-];
-const TRAINING_XP_PER_MARK = 1; // flat for every training item, no per-task multiplier — emphasis on a skill = add more items for it, not weight existing ones higher
+const TRAINING_XP_PER_MARK = 1; // flat for every training item
 const DEFAULT_PARENT_PIN = '1111'; // change data.parentPin from Settings once unlocked
 
 const TASK_XP = 1; // was 2 — kept small so daily habits are a supplement, not the main growth engine
@@ -367,7 +358,14 @@ function defaultData(){
     habit: { perfectWeeks:0, lastSettledWeekMonday:null },
     roster: [],
     trainingLog: {},
-    trainingLevel: 1,
+    trainingTasks: [
+      {id:'tr1', name:'Пошёл в отбор первым', attr:'battle'},
+      {id:'tr2', name:'Ускорился без шайбы', attr:'skating'},
+      {id:'tr3', name:'Вернулся в защиту не последним', attr:'fitness'},
+      {id:'tr4', name:'Пошёл в борьбу у борта', attr:'battle'},
+      {id:'tr5', name:'Догнал и отобрал шайбу', attr:'battle'},
+      {id:'tr6', name:'Активная игра в защите', attr:'fitness'},
+    ],
     parentPin: DEFAULT_PARENT_PIN,
     bonusLedger: [],
     lineup: {}
@@ -475,6 +473,25 @@ function computeAttrSubAverages(attrKey, lastN=5){
   return fields.map(f=>{
     const sum = recent.reduce((s,g)=> s + (g.raw[f]||0), 0);
     return {field:f, avg: sum/recent.length};
+  });
+}
+
+function computeTaskContributions(attrKey){
+  return data.tasks.filter(t=>t.attr===attrKey).map(t=>{
+    let count=0;
+    Object.values(data.taskLog).forEach(entries=>{
+      if(entries[t.id] && entries[t.id].status==='done') count++;
+    });
+    const xpEach = t.skillXp ?? TASK_XP;
+    return {name:t.name, count, xpEach, totalXp:count*xpEach};
+  });
+}
+
+function computeTrainingContributions(attrKey){
+  return data.trainingTasks.filter(t=>t.attr===attrKey).map(t=>{
+    let count=0;
+    Object.values(data.trainingLog).forEach(marks=>{ if(marks[t.id]) count += marks[t.id]; });
+    return {name:t.name, count, xpEach:TRAINING_XP_PER_MARK, totalXp:count*TRAINING_XP_PER_MARK};
   });
 }
 
@@ -607,13 +624,25 @@ function renderPlayer(){
         const deltaTag = (lastDelta!==null && Math.abs(lastDelta)>=0.05)
           ? `<span style="color:${lastDelta>0?'var(--pos)':'var(--neg)'}; font-size:11px; margin-left:6px;">${lastDelta>0?'+':''}${lastDelta.toFixed(1)}</span>` : '';
         const subs = computeAttrSubAverages(a.key);
-        const subsHtml = subs===null
-          ? `<div class="muted">Растёт только из тренировок — см. вкладку «Тренировки»</div>`
-          : (subs.map(s=>`
+        const matchHtml = subs===null
+          ? `<div class="muted">Этот навык не растёт от матчей.</div>`
+          : (subs.length && data.games.filter(g=>!g.missed).length>0 ? subs.map(s=>`
           <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
             <span class="muted" style="flex:2;">${SUB_LABELS[s.field]}</span>
             <span style="font-family:'Oswald',sans-serif;">${s.avg===null?'—':s.avg.toFixed(1)}</span>
-          </div>`).join('') || '<div class="empty">Пока нет игр</div>');
+          </div>`).join('') : '<div class="empty">Пока нет игр</div>');
+        const taskContrib = computeTaskContributions(a.key);
+        const taskHtml = taskContrib.length===0 ? '<div class="empty">Нет заданий на этот навык</div>' : taskContrib.map(t=>`
+          <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
+            <span class="muted" style="flex:2;">${t.name}</span>
+            <span style="font-family:'Oswald',sans-serif;">×${t.count} (+${t.totalXp.toFixed(1)} XP)</span>
+          </div>`).join('');
+        const trainContrib = computeTrainingContributions(a.key);
+        const trainHtml = trainContrib.length===0 ? '<div class="empty">Нет упражнений на этот навык</div>' : trainContrib.map(t=>`
+          <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
+            <span class="muted" style="flex:2;">${t.name}</span>
+            <span style="font-family:'Oswald',sans-serif;">×${t.count} (+${t.totalXp.toFixed(1)} XP)</span>
+          </div>`).join('');
         return `
         <div class="attr-block">
           <div class="attr-top node" style="cursor:pointer;" data-toggle-attr="${a.key}">
@@ -624,8 +653,12 @@ function renderPlayer(){
           <div class="xp-bg"><div class="xp-fill" style="width:${Math.max(0,Math.min(100,a.xp/LEVEL_XP*100))}%"></div></div>
           ${parentUnlocked ? `<div class="muted" style="font-size:10px; margin-top:2px;">${a.xp.toFixed(1)} / ${LEVEL_XP} XP</div>` : ''}
           <div id="detail-${a.key}" style="display:none; margin-top:8px; padding:8px 10px; background:var(--panel-2); border-radius:8px;">
-            <div class="muted" style="margin-bottom:4px;">Среднее за последние ${Math.min(5,data.games.length)} игр</div>
-            ${subsHtml || '<div class="empty">Пока нет игр</div>'}
+            <div class="muted" style="margin-bottom:4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из матчей (среднее за ${Math.min(5,data.games.filter(g=>!g.missed).length)} игр)</div>
+            ${matchHtml}
+            <div class="muted" style="margin:10px 0 4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из заданий</div>
+            ${taskHtml}
+            <div class="muted" style="margin:10px 0 4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из тренировок</div>
+            ${trainHtml}
           </div>
         </div>`;
       }).join('')}
@@ -1118,7 +1151,7 @@ function renderTeam(){
 // ================= RENDER: TRAINING CHECKLIST =================
 function renderTraining(){
   const el = document.getElementById('tab-training');
-  const activeTasks = TRAINING_TASKS.filter(t=>t.level<=data.trainingLevel);
+  const activeTasks = data.trainingTasks;
   const draft = {};
   activeTasks.forEach(t=> draft[t.id]=0);
 
@@ -1126,19 +1159,60 @@ function renderTraining(){
 
   el.innerHTML = `
     <div class="card">
-      <h2>Тренировочный чек-лист (уровень ${data.trainingLevel})</h2>
+      <h2>Тренировочный чек-лист</h2>
       <p class="muted">Максимум ${MAX_MARKS_PER_SESSION} отметки за тренировку — как на листе на стене. Отмечай только то, что было реальным действием.</p>
       <div class="row"><div class="field"><label class="f">Дата тренировки</label><input type="date" id="tr-date"></div></div>
       <div id="training-checklist"></div>
       <div class="muted" id="training-total" style="margin:8px 0;"></div>
       <button class="primary" id="save-training">Сохранить тренировку</button>
     </div>
+
+    ${parentUnlocked ? `
+    <div class="card">
+      <h2>Список упражнений (родительский режим)</h2>
+      <div class="row">
+        <input id="tr-task-name" placeholder="Название упражнения">
+        <select id="tr-task-attr" style="max-width:190px">
+          ${Object.entries(ATTR_DEFS).map(([k,d])=>`<option value="${k}">${d.label}</option>`).join('')}
+        </select>
+        <button class="primary" id="tr-task-add">Добавить</button>
+      </div>
+      <ul class="list" id="tr-task-list"></ul>
+    </div>` : ''}
+
     <div id="training-history"></div>
+    <div id="training-stats"></div>
   `;
   document.getElementById('tr-date').valueAsDate = new Date();
 
+  if(parentUnlocked){
+    document.getElementById('tr-task-add').onclick = ()=>{
+      const name = document.getElementById('tr-task-name').value.trim();
+      const attr = document.getElementById('tr-task-attr').value;
+      if(!name) return;
+      data.trainingTasks.push({id:uid(), name, attr});
+      saveData(); renderTraining();
+    };
+    const trTaskList = document.getElementById('tr-task-list');
+    if(data.trainingTasks.length===0){ trTaskList.innerHTML = '<li class="empty">Пока нет упражнений</li>'; }
+    data.trainingTasks.forEach(t=>{
+      const li=document.createElement('li');
+      li.innerHTML = `<span>${icon(t.attr)} ${t.name} <span class="pill">${ATTR_DEFS[t.attr].label}</span></span>
+        <button class="icon-btn" data-del-tr-task="${t.id}">✕</button>`;
+      trTaskList.appendChild(li);
+    });
+    trTaskList.querySelectorAll('[data-del-tr-task]').forEach(b=>b.onclick=()=>{
+      data.trainingTasks = data.trainingTasks.filter(t=>t.id!==b.dataset.delTrTask);
+      saveData(); renderTraining();
+    });
+  }
+
   function renderChecklist(){
     const listEl = document.getElementById('training-checklist');
+    if(activeTasks.length===0){
+      listEl.innerHTML = '<p class="empty">Пока нет упражнений — добавь их в родительском режиме.</p>';
+      return;
+    }
     listEl.innerHTML = activeTasks.map(t=>`
       <div class="row" style="align-items:center;">
         <span style="flex:2; font-size:13px;">${icon(t.attr)} ${t.name}</span>
@@ -1178,30 +1252,61 @@ function renderTraining(){
     alert('Тренировка сохранена.');
   };
   renderTrainingHistory();
+  renderTrainingStats();
 }
 
 function renderTrainingHistory(){
   const wrap = document.getElementById('training-history');
-  const entries = Object.entries(data.trainingLog).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,15);
+  const entries = Object.entries(data.trainingLog).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,5);
   if(entries.length===0){ wrap.innerHTML=''; return; }
   const rows = entries.map(([date, marks])=>{
     const parts = Object.entries(marks).map(([tid,count])=>{
-      const t = TRAINING_TASKS.find(t=>t.id===tid);
+      const t = data.trainingTasks.find(t=>t.id===tid);
       return t ? `${t.name} ×${count}` : '';
     }).filter(Boolean).join(', ');
     return `<li><span>${date}<br><span class="muted">${parts}</span></span><button class="icon-btn" data-del-training="${date}">✕</button></li>`;
   }).join('');
-  wrap.innerHTML = `<div class="card"><h2>История тренировок</h2><ul class="list">${rows}</ul></div>`;
+  wrap.innerHTML = `<div class="card"><h2>Последние 5 тренировок</h2><ul class="list">${rows}</ul></div>`;
   wrap.querySelectorAll('[data-del-training]').forEach(b=>b.onclick=()=>{
     const date = b.dataset.delTraining;
     const marks = data.trainingLog[date];
     Object.entries(marks).forEach(([tid,count])=>{
-      const t = TRAINING_TASKS.find(t=>t.id===tid);
+      const t = data.trainingTasks.find(t=>t.id===tid);
       if(t) applyXp(t.attr, -count*TRAINING_XP_PER_MARK);
     });
     delete data.trainingLog[date];
     saveData(); renderPlayer(); renderTraining();
   });
+}
+
+function renderTrainingStats(){
+  const wrap = document.getElementById('training-stats');
+  const agg = {};
+  data.trainingTasks.forEach(t=> agg[t.id] = {name:t.name, attr:t.attr, count:0});
+  Object.values(data.trainingLog).forEach(marks=>{
+    Object.entries(marks).forEach(([tid,count])=>{
+      if(!agg[tid]) return;
+      agg[tid].count += count;
+    });
+  });
+  const rows = Object.values(agg).sort((a,b)=>b.count-a.count);
+  const totalSessions = Object.keys(data.trainingLog).length;
+  wrap.innerHTML = `
+    <div class="card">
+      <h2>Вся статистика тренировок</h2>
+      <div class="row"><span class="muted" style="flex:2;">Всего тренировок внесено</span><b>${totalSessions}</b></div>
+      <div class="chart-wrap">
+        <table>
+          <thead><tr><th>Упражнение</th><th>Навык</th><th>Сделано раз</th></tr></thead>
+          <tbody>
+            ${rows.length===0 ? `<tr><td colspan="3" class="empty">Пока нет данных</td></tr>` : rows.map(r=>`
+              <tr><td>${r.name}</td><td>${icon(r.attr)} ${ATTR_DEFS[r.attr].label}</td><td>${r.count}</td></tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 // ================= RENDER: TASKS =================
@@ -1371,7 +1476,8 @@ function renderTasks(){
       const entry = data.taskLog[dateStr] && data.taskLog[dateStr][t.id];
       const cls = entry ? (entry.status==='done' ? 'on' : '') : '';
       const mark = entry ? (entry.status==='done' ? '✓' : '⏳') : '';
-      grid.innerHTML += `<div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''}" data-toggle="${dateStr}|${t.id}">${mark}</div>`;
+      const editable = parentUnlocked || dateStr===todayStr();
+      grid.innerHTML += `<div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div>`;
     });
   });
   grid.querySelectorAll('[data-toggle]').forEach(c=>c.onclick=()=>{
@@ -1435,22 +1541,12 @@ function renderSettings(){
       <ul class="list" id="my-list"></ul>
     </div>
     <div class="card">
-      <h2>Уровень тренировочного чек-листа</h2>
-      <p class="muted">Переход на новый уровень — твоё решение (или совместное с Самиром), не автоматика. Текущий: уровень ${data.trainingLevel} из 3.</p>
-      <div class="row">
-        <button class="ghost" id="level-down" ${data.trainingLevel<=1?'disabled':''}>← Понизить</button>
-        <button class="primary" id="level-up" ${data.trainingLevel>=3?'disabled':''}>Открыть уровень ${data.trainingLevel+1} →</button>
-      </div>
-    </div>
-    <div class="card">
       <h2>Стартовые рейтинги навыков</h2>
       <p class="muted">Меняй, только если нужно скорректировать текущие значения вручную (не влияет на прошлые игры).</p>
       <div class="row" id="attr-edit"></div>
       <button class="primary" id="attr-save">Сохранить рейтинги</button>
     </div>
   `;
-  document.getElementById('level-up').onclick = ()=>{ data.trainingLevel = Math.min(3, data.trainingLevel+1); saveData(); renderSettings(); renderTraining(); };
-  document.getElementById('level-down').onclick = ()=>{ data.trainingLevel = Math.max(1, data.trainingLevel-1); saveData(); renderSettings(); renderTraining(); };
 
   document.getElementById('s-save-pin').onclick = ()=>{
     const v = document.getElementById('s-pin').value.trim();
