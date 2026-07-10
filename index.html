@@ -74,6 +74,12 @@
   .icon-btn:hover{color:var(--rink-line);}
   .daybtn{background:var(--panel-2); border:1px solid var(--steel); color:var(--steel); border-radius:6px; padding:6px 9px; font-size:12px; cursor:pointer;}
   .daybtn.on{background:var(--gold); color:var(--ice-deep); border-color:var(--gold); font-weight:600;}
+  .toggle{position:relative; display:inline-block; width:38px; height:22px; flex-shrink:0;}
+  .toggle input{opacity:0; width:0; height:0;}
+  .toggle .slider{position:absolute; inset:0; background:var(--panel-2); border:1px solid var(--steel); border-radius:999px; cursor:pointer; transition:.15s;}
+  .toggle .slider::before{content:''; position:absolute; height:16px; width:16px; left:2px; top:2px; background:var(--steel); border-radius:50%; transition:.15s;}
+  .toggle input:checked + .slider{background:var(--pos); border-color:var(--pos);}
+  .toggle input:checked + .slider::before{transform:translateX(16px); background:var(--ice-deep);}
   ul.list{list-style:none; margin:0; padding:0;}
   ul.list li{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(255,255,255,.06);}
   ul.list li:last-child{border-bottom:none;}
@@ -360,12 +366,12 @@ function defaultData(){
     roster: [],
     trainingLog: {},
     trainingTasks: [
-      {id:'tr1', name:'Пошёл в отбор первым', attr:'battle'},
-      {id:'tr2', name:'Ускорился без шайбы', attr:'skating'},
-      {id:'tr3', name:'Вернулся в защиту не последним', attr:'fitness'},
-      {id:'tr4', name:'Пошёл в борьбу у борта', attr:'battle'},
-      {id:'tr5', name:'Догнал и отобрал шайбу', attr:'battle'},
-      {id:'tr6', name:'Активная игра в защите', attr:'fitness'},
+      {id:'tr1', name:'Пошёл в отбор первым', attr:'battle', active:true},
+      {id:'tr2', name:'Ускорился без шайбы', attr:'skating', active:true},
+      {id:'tr3', name:'Вернулся в защиту не последним', attr:'fitness', active:true},
+      {id:'tr4', name:'Пошёл в борьбу у борта', attr:'battle', active:true},
+      {id:'tr5', name:'Догнал и отобрал шайбу', attr:'battle', active:true},
+      {id:'tr6', name:'Активная игра в защите', attr:'fitness', active:true},
     ],
     parentPin: DEFAULT_PARENT_PIN,
     bonusLedger: [],
@@ -396,6 +402,11 @@ async function loadData(){
     data.weeklyPrograms[mondayStr(todayStr())] = (data.tasks||[]).map(t=>({
       id:t.id, name:t.name, points:t.points, attr:t.attr, skillXp:t.skillXp, days:t.days, confirmRequired:t.confirmRequired
     }));
+  }
+  if(!data.fixedStaleShootingXp){
+    // one-time cleanup of leftover XP from an early build's weaker conversion-penalty bug
+    data.player.attributes.shooting.xp = 0;
+    data.fixedStaleShootingXp = true;
   }
   if(settleWeeks()) saveData();
   renderAll();
@@ -566,9 +577,6 @@ function renderPlayer(){
   const lastRating = played.length ? played[played.length-1].matchRating.toFixed(1) : '—';
   const avgRating = played.length ? (played.reduce((s,g)=>s+g.matchRating,0)/played.length).toFixed(1) : '—';
 
-  // lagging = the actual weakest attribute right now (not "closest to level up")
-  const lagging = attrs.reduce((min,a)=> (!min || a.rating<min.rating) ? a : min, null);
-
   // today's tasks progress (left "daily objectives" style box)
   const todayStr_ = todayStr();
   const todayTasks = tasksForDate(todayStr_);
@@ -594,12 +602,6 @@ function renderPlayer(){
           <div class="gg-line"><span>Задания сегодня</span><b>${todayDone}/${todayTasks.length||0}</b></div>
           <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${todayTasks.length?todayDone/todayTasks.length*100:0}%"></div></div>
           <div class="gg-line" style="margin-top:10px;"><span>🔥 Недель без пропусков</span><b>${data.habit.perfectWeeks}</b></div>
-        </div>
-        <div class="gg-box">
-          <div class="gg-box-title">Отстающий навык</div>
-          <div class="gg-line"><span>${icon(lagging.key)} ${lagging.label}</span><b>${lagging.rating}</b></div>
-          <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${Math.max(0,Math.min(100,lagging.xp/LEVEL_XP*100))}%"></div></div>
-          <div class="muted" style="margin-top:4px; font-size:11px;">${Math.ceil(LEVEL_XP-lagging.xp)} XP до следующего уровня</div>
         </div>
       </div>
 
@@ -773,6 +775,12 @@ function renderGame(){
       <div class="row">
         <div class="field"><label class="f">Дата</label><input type="date" id="g-date"></div>
         <div class="field"><label class="f">Соперник</label><input id="g-opp" placeholder="Название команды"></div>
+        <div class="field"><label class="f">Тип матча</label>
+          <select id="g-type">
+            <option value="official">Официальная</option>
+            <option value="friendly">Товарищеская</option>
+          </select>
+        </div>
       </div>
       <div class="row">
         <label style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;">
@@ -854,6 +862,7 @@ function renderGame(){
   if(editGame){
     document.getElementById('g-date').value = editGame.date;
     document.getElementById('g-opp').value = editGame.opponent;
+    document.getElementById('g-type').value = editGame.matchType || 'official';
     Object.entries(editGame.raw||{}).forEach(([k,v])=>{
       const f = document.getElementById('f-'+k);
       if(f) f.value = v;
@@ -912,10 +921,11 @@ function renderGame(){
   document.getElementById('save-game').onclick = ()=>{
     const date = document.getElementById('g-date').value || todayStr();
     const opponent = document.getElementById('g-opp').value.trim() || '—';
+    const matchType = document.getElementById('g-type').value;
     const missed = document.getElementById('g-missed').checked;
 
     if(missed){
-      data.games.push({id:uid(), date, opponent, missed:true, raw:null, xpGained:null, matchRating:null, ovrAfter: ovr(), scoresheet:[]});
+      data.games.push({id:uid(), date, opponent, matchType, missed:true, raw:null, xpGained:null, matchRating:null, ovrAfter: ovr(), scoresheet:[]});
       data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
       saveData(); renderPlayer(); renderGame();
       alert('Игра отмечена как пропущенная — рейтинги не изменились.');
@@ -980,9 +990,9 @@ function renderGame(){
     }
 
     if(editedGame){
-      Object.assign(editedGame, {date, opponent, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
+      Object.assign(editedGame, {date, opponent, matchType, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
     } else {
-      data.games.push({id:uid(), date, opponent, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
+      data.games.push({id:uid(), date, opponent, matchType, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
     }
     data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
     editingGameId = null;
@@ -1018,13 +1028,14 @@ let matchesSortState = { key: 'date', dir: 'desc' };
 function renderMatches(){
   const el = document.getElementById('tab-matches');
   const cols = [
-    {key:'date', label:'Дата'}, {key:'opponent', label:'Соперник'}, {key:'matchRating', label:'Оценка'},
+    {key:'date', label:'Дата'}, {key:'opponent', label:'Соперник'}, {key:'matchType', label:'Тип'}, {key:'matchRating', label:'Оценка'},
     {key:'skating', label:icon('skating')+' Катание'}, {key:'dribbling', label:icon('dribbling')+' Дриблинг'}, {key:'shooting', label:icon('shooting')+' Бросок'},
     {key:'iq', label:icon('iq')+' Интеллект'}, {key:'battle', label:icon('battle')+' Борьба'},
   ];
   function valueFor(g, key){
     if(key==='date') return g.date;
     if(key==='opponent') return g.opponent;
+    if(key==='matchType') return g.matchType==='friendly' ? 'Товарищеская' : 'Официальная';
     if(key==='matchRating') return g.missed ? -Infinity : g.matchRating;
     return g.missed ? -Infinity : (g.xpGained[key]||0);
   }
@@ -1036,7 +1047,7 @@ function renderMatches(){
   el.innerHTML = `
     <div class="card">
       <h2>Все матчи (${data.games.length})</h2>
-      <p class="muted">Нажми на заголовок столбца, чтобы отсортировать по возрастанию/убыванию.</p>
+      <p class="muted">Нажми на заголовок столбца, чтобы отсортировать по возрастанию/убыванию (например по «Тип», чтобы сгруппировать официальные отдельно от товарищеских).</p>
       <div class="chart-wrap">
         <table>
           <thead><tr>${cols.map(c=>`<th data-sort="${c.key}" style="cursor:pointer;">${c.label}${matchesSortState.key===c.key?(matchesSortState.dir==='asc'?' ▲':' ▼'):''}</th>`).join('')}<th>Действия</th></tr></thead>
@@ -1045,6 +1056,7 @@ function renderMatches(){
               if(g.missed) return `<tr><td>${g.date}</td><td>${g.opponent}</td><td colspan="${cols.length-2}" class="muted">🩹 пропущено</td><td><button class="icon-btn" data-del-game="${g.id}">✕</button></td></tr>`;
               return `<tr>
                 <td>${g.date}</td><td>${g.opponent}</td>
+                <td><span class="pill">${g.matchType==='friendly'?'Товарищеская':'Официальная'}</span></td>
                 <td><span class="pill">${g.matchRating.toFixed(1)}</span></td>
                 ${['skating','dribbling','shooting','iq','battle'].map(k=>{
                   const v=g.xpGained[k]||0;
@@ -1169,7 +1181,7 @@ function renderTeam(){
 let trainingSelectedView = 'checklist';
 function renderTraining(){
   const el = document.getElementById('tab-training');
-  const activeTasks = data.trainingTasks;
+  const activeTasks = data.trainingTasks.filter(t=>t.active!==false);
   const draft = {};
   activeTasks.forEach(t=> draft[t.id]=0);
 
@@ -1227,16 +1239,22 @@ function renderTraining(){
       const name = document.getElementById('tr-task-name').value.trim();
       const attr = document.getElementById('tr-task-attr').value;
       if(!name) return;
-      data.trainingTasks.push({id:uid(), name, attr});
+      data.trainingTasks.push({id:uid(), name, attr, active:true});
       saveData(); renderTraining();
     };
     const trTaskList = document.getElementById('tr-task-list');
     if(data.trainingTasks.length===0){ trTaskList.innerHTML = '<li class="empty">Пока нет упражнений</li>'; }
     data.trainingTasks.forEach(t=>{
       const li=document.createElement('li');
-      li.innerHTML = `<span>${icon(t.attr)} ${t.name} <span class="pill">${ATTR_DEFS[t.attr].label}</span></span>
+      li.innerHTML = `<label class="toggle"><input type="checkbox" data-vis-tr="${t.id}" ${t.active!==false?'checked':''}><span class="slider"></span></label>
+        <span style="flex:1;">${icon(t.attr)} ${t.name} <span class="pill">${ATTR_DEFS[t.attr].label}</span>${t.active===false?' <span class="pill">скрыто</span>':''}</span>
         <button class="icon-btn" data-del-tr-task="${t.id}">✕</button>`;
       trTaskList.appendChild(li);
+    });
+    trTaskList.querySelectorAll('[data-vis-tr]').forEach(cb=>cb.onchange=()=>{
+      const task = data.trainingTasks.find(t=>t.id===cb.dataset.visTr);
+      task.active = cb.checked;
+      saveData(); renderTraining();
     });
     trTaskList.querySelectorAll('[data-del-tr-task]').forEach(b=>b.onclick=()=>{
       data.trainingTasks = data.trainingTasks.filter(t=>t.id!==b.dataset.delTrTask);
