@@ -503,17 +503,17 @@ function computeAttrSubAverages(attrKey, lastN=5){
 }
 
 function computeTaskContributions(attrKey){
-  const allTasks = Object.values(data.weeklyPrograms).flat();
-  const byId = new Map();
-  allTasks.filter(t=>t.attr===attrKey).forEach(t=>{ if(!byId.has(t.id)) byId.set(t.id, t); });
-  return [...byId.values()].map(t=>{
-    let count=0;
-    Object.values(data.taskLog).forEach(entries=>{
-      if(entries[t.id] && entries[t.id].status==='done') count++;
-    });
+  const allTasks = Object.values(data.weeklyPrograms).flat().filter(t=>t.attr===attrKey);
+  const byName = new Map(); // group by name — the same recurring task gets a fresh id every week, name is what actually identifies it to a person
+  allTasks.forEach(t=>{
+    if(!byName.has(t.name)) byName.set(t.name, {name:t.name, count:0, totalXp:0});
+    const agg = byName.get(t.name);
     const xpEach = t.skillXp ?? TASK_XP;
-    return {name:t.name, count, xpEach, totalXp:count*xpEach};
+    Object.values(data.taskLog).forEach(entries=>{
+      if(entries[t.id] && entries[t.id].status==='done'){ agg.count++; agg.totalXp += xpEach; }
+    });
   });
+  return [...byName.values()];
 }
 
 function computeTrainingContributions(attrKey){
