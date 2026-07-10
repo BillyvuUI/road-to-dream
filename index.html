@@ -344,12 +344,13 @@ function defaultData(){
     }, ovrHistory:{} },
     games: [],
     tasks: [
-      {id:'t1', name:'Утренняя зарядка', points:1, attr:'fitness', skillXp:0.5, days:[0,1,2,3,4,5,6], confirmRequired:false, active:true, startDate:null},
-      {id:'t2', name:'Бокс', points:1, attr:'battle', skillXp:0.5, days:[0], confirmRequired:false, active:true, startDate:null},
-      {id:'t3', name:'ОФП', points:1, attr:'fitness', skillXp:1, days:[5,6], confirmRequired:false, active:true, startDate:null},
-      {id:'t4', name:'Баланс-борд 10 мин', points:1, attr:'skating', skillXp:1, days:[1,3], confirmRequired:false, active:true, startDate:null},
-      {id:'t5', name:'Дриблинг с клюшкой дома', points:1, attr:'dribbling', skillXp:1, days:[2,4], confirmRequired:false, active:true, startDate:null},
+      {id:'t1', name:'Утренняя зарядка', points:1, attr:'fitness', skillXp:0.5, days:[0,1,2,3,4,5,6], confirmRequired:false},
+      {id:'t2', name:'Бокс', points:1, attr:'battle', skillXp:0.5, days:[0], confirmRequired:false},
+      {id:'t3', name:'ОФП', points:1, attr:'fitness', skillXp:1, days:[5,6], confirmRequired:false},
+      {id:'t4', name:'Баланс-борд 10 мин', points:1, attr:'skating', skillXp:1, days:[1,3], confirmRequired:false},
+      {id:'t5', name:'Дриблинг с клюшкой дома', points:1, attr:'dribbling', skillXp:1, days:[2,4], confirmRequired:false},
     ],
+    weeklyPrograms: {}, // { 'YYYY-MM-DD' (Monday) : [task, task, ...] } — each week is independent, nothing carries over automatically
     taskLog: {},
     milestones: {
       monthly: RECOMMENDED_MILESTONES.monthly.map((m,i)=>({id:'mm'+i, ...m})),
@@ -390,6 +391,12 @@ async function loadData(){
     const snap = await getDoc(appDocRef);
     if(snap.exists() && snap.data().json){ data = Object.assign(defaultData(), JSON.parse(snap.data().json)); }
   }catch(e){ console.error('load failed', e); alert('Не удалось загрузить данные из Firebase — проверь интернет-соединение.'); }
+  if(!data.weeklyPrograms || Object.keys(data.weeklyPrograms).length===0){
+    // migrate the old always-recurring task list into "this week"'s program, once
+    data.weeklyPrograms[mondayStr(todayStr())] = (data.tasks||[]).map(t=>({
+      id:t.id, name:t.name, points:t.points, attr:t.attr, skillXp:t.skillXp, days:t.days, confirmRequired:t.confirmRequired
+    }));
+  }
   if(settleWeeks()) saveData();
   renderAll();
 }
@@ -423,11 +430,13 @@ function weekdayIndex(dateStr){ return (new Date(dateStr).getDay()+6)%7; } // 0=
 
 function mondayStr(dateStr){ return mondayOf(dateStr).toISOString().slice(0,10); }
 
-// Tasks Samir actually sees/counts on a given date: must be marked visible by the
-// parent, scheduled for that weekday, and (if scheduled to start later) already started.
+function programForWeek(mondayDateStr){ return data.weeklyPrograms[mondayDateStr] || []; }
+
+// Tasks that exist for a given date: whatever was explicitly added to THAT week's
+// program, matching that weekday. Nothing recurs automatically week to week.
 function tasksForDate(dateStr){
   const weekday = weekdayIndex(dateStr);
-  return data.tasks.filter(t=> t.active!==false && t.days.includes(weekday) && (!t.startDate || dateStr>=t.startDate));
+  return programForWeek(mondayStr(dateStr)).filter(t=>t.days.includes(weekday));
 }
 
 // Walks forward week-by-week (Mon-Sun) from the last settled week up to (not including)
@@ -483,7 +492,10 @@ function computeAttrSubAverages(attrKey, lastN=5){
 }
 
 function computeTaskContributions(attrKey){
-  return data.tasks.filter(t=>t.attr===attrKey).map(t=>{
+  const allTasks = Object.values(data.weeklyPrograms).flat();
+  const byId = new Map();
+  allTasks.filter(t=>t.attr===attrKey).forEach(t=>{ if(!byId.has(t.id)) byId.set(t.id, t); });
+  return [...byId.values()].map(t=>{
     let count=0;
     Object.values(data.taskLog).forEach(entries=>{
       if(entries[t.id] && entries[t.id].status==='done') count++;
@@ -1335,6 +1347,7 @@ function renderTrainingStats(){
 
 // ================= RENDER: TASKS =================
 let tasksWeekOffset = 0; // 0 = this week, negative = past weeks, max +1 = next week
+let editingTaskId = null;
 function renderTasks(){
   const el = document.getElementById('tab-tasks');
   const viewedMonday = mondayStr(addDays(todayStr(), tasksWeekOffset*7));
@@ -1371,13 +1384,19 @@ function renderTasks(){
     `;
   }
 
-  // pending confirmations across the whole log (parent-only)
+  // pending confirmations across the whole log (parent-only) — task defs can live in any week
+  function findTaskById(id){
+    for(const arr of Object.values(data.weeklyPrograms)){
+      const t = arr.find(t=>t.id===id);
+      if(t) return t;
+    }
+    return null;
+  }
   const pendingList = [];
   Object.entries(data.taskLog).forEach(([date, entries])=>{
     Object.entries(entries).forEach(([taskId, e])=>{
       if(e.status==='pending'){
-        const task = data.tasks.find(t=>t.id===taskId);
-        pendingList.push({date, taskId, task});
+        pendingList.push({date, taskId, task: findTaskById(taskId)});
       }
     });
   });
@@ -1409,7 +1428,7 @@ function renderTasks(){
 
     <div class="card">
       <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:4px;">
-        <h2 style="margin:0;">${tasksWeekOffset===0?'Эта неделя':(tasksWeekOffset===1?'Следующая неделя':`Неделя ${viewedMonday}`)}</h2>
+        <h2 style="margin:0;">${tasksWeekOffset===0?'Эта неделя':(tasksWeekOffset===1?'Следующая неделя':`Неделя от ${viewedMonday}`)}</h2>
         <div style="display:flex; gap:4px;">
           <button class="ghost" id="week-prev" type="button">← Раньше</button>
           <button class="ghost" id="week-next" type="button" ${tasksWeekOffset>=1?'disabled':''}>Позже →</button>
@@ -1419,9 +1438,13 @@ function renderTasks(){
       <div class="week-grid" id="week-grid"></div>
     </div>
 
-    ${parentUnlocked ? `
+    ${parentUnlocked && (tasksWeekOffset===0 || tasksWeekOffset===1) ? `
     <div class="card">
-      <h2>Список заданий (родительский режим)</h2>
+      <h2>Список заданий — ${tasksWeekOffset===0?'эта неделя':'следующая неделя'}</h2>
+      <p class="muted">Каждая неделя своя — ничего не переносится сюда автоматически. ${tasksWeekOffset===1?'Задания отсюда начнут действовать только с понедельника.':''}</p>
+      ${tasksWeekOffset===1 && programForWeek(viewedMonday).length===0 && programForWeek(mondayStr(todayStr())).length>0 ? `
+        <button class="ghost" id="copy-week" type="button" style="margin-bottom:10px;">Скопировать список с этой недели</button>
+      ` : ''}
       <div class="row">
         <input id="task-name" placeholder="Название задания">
         <input id="task-points" type="number" min="1" placeholder="Баллы" style="max-width:90px" value="1">
@@ -1432,13 +1455,9 @@ function renderTasks(){
         <input id="task-skillxp" type="number" min="0" step="0.1" placeholder="XP навыку" style="max-width:100px" value="1">
       </div>
       <div class="row" id="task-days"></div>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:6px; cursor:pointer;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
         <input type="checkbox" id="task-confirm" style="width:auto; flex:none;">
         Требовать подтверждение родителя (для важных/редких заданий — не для ежедневных привычек)
-      </label>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
-        <input type="checkbox" id="task-nextweek" style="width:auto; flex:none;">
-        Начать со следующей недели (не показывать в текущей)
       </label>
       <button class="primary" id="add-task">Добавить задание</button>
       <ul class="list" id="task-list" style="margin-top:10px;"></ul>
@@ -1449,7 +1468,7 @@ function renderTasks(){
     document.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>{
       const [date, taskId] = b.dataset.confirm.split('|');
       data.taskLog[date][taskId].status = 'done';
-      const task = data.tasks.find(t=>t.id===taskId);
+      const task = findTaskById(taskId);
       if(task && task.attr) applyXp(task.attr, task.skillXp ?? TASK_XP);
       saveData(); renderTasks(); renderPlayer();
     });
@@ -1460,7 +1479,17 @@ function renderTasks(){
     });
   }
 
-  if(parentUnlocked){
+  if(parentUnlocked && (tasksWeekOffset===0 || tasksWeekOffset===1)){
+    if(!data.weeklyPrograms[viewedMonday]) data.weeklyPrograms[viewedMonday] = [];
+    const program = data.weeklyPrograms[viewedMonday];
+
+    const copyBtn = document.getElementById('copy-week');
+    if(copyBtn) copyBtn.onclick = ()=>{
+      const thisWeek = programForWeek(mondayStr(todayStr()));
+      data.weeklyPrograms[viewedMonday] = thisWeek.map(t=>({...t, id:uid()}));
+      saveData(); renderTasks();
+    };
+
     const daysWrap = document.getElementById('task-days');
     const selectedDays = new Set();
     DAY_LABELS.forEach((lbl,i)=>{
@@ -1475,64 +1504,92 @@ function renderTasks(){
       const attr = document.getElementById('task-attr').value || null;
       const skillXp = parseFloat(document.getElementById('task-skillxp').value);
       const confirmRequired = document.getElementById('task-confirm').checked;
-      const nextWeek = document.getElementById('task-nextweek').checked;
       if(!name || selectedDays.size===0){ alert('Укажи название и хотя бы один день недели'); return; }
-      const startDate = nextWeek ? mondayStr(addDays(todayStr(),7)) : null;
-      data.tasks.push({id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired, active:true, startDate});
+      program.push({id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired});
       saveData(); renderTasks();
     };
 
     const taskList = document.getElementById('task-list');
-    if(data.tasks.length===0){ taskList.innerHTML = '<li class="empty">Пока нет заданий</li>'; }
-    data.tasks.forEach(t=>{
+    if(program.length===0){ taskList.innerHTML = '<li class="empty">Пока нет заданий на эту неделю</li>'; }
+    program.forEach(t=>{
       const li=document.createElement('li');
-      const attrPill = t.attr ? `<span class="pill">${icon(t.attr)} ${ATTR_DEFS[t.attr].label}</span>` : '';
-      const confirmPill = t.confirmRequired ? `<span class="pill">требует подтверждения</span>` : '';
-      const startPill = t.startDate && t.startDate > todayStr() ? `<span class="pill">с ${t.startDate}</span>` : '';
-      li.innerHTML = `<label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1;">
-          <input type="checkbox" data-vis-task="${t.id}" ${t.active!==false?'checked':''} style="width:auto; flex:none;">
-          <span>${t.name} <span class="pill">${t.points} б.</span> ${attrPill} ${confirmPill} ${startPill} <span class="pill">${t.days.map(d=>DAY_LABELS[d]).join(' ')}</span></span>
-        </label>
-        <button class="icon-btn" data-del-task="${t.id}">✕</button>`;
-      taskList.appendChild(li);
+      if(editingTaskId===t.id){
+        li.style.display='block';
+        li.innerHTML = `
+          <div class="row">
+            <input id="et-name" value="${t.name}" style="flex:2;">
+            <input id="et-points" type="number" min="1" value="${t.points}" style="max-width:80px;">
+            <select id="et-attr" style="max-width:170px">
+              <option value="">Без навыка</option>
+              ${Object.entries(ATTR_DEFS).map(([k,d])=>`<option value="${k}" ${t.attr===k?'selected':''}>${d.label}</option>`).join('')}
+            </select>
+            <input id="et-skillxp" type="number" min="0" step="0.1" value="${t.skillXp??1}" style="max-width:90px;">
+          </div>
+          <div class="row" id="et-days"></div>
+          <div class="row">
+            <button class="primary" id="et-save" type="button">Сохранить</button>
+            <button class="ghost" id="et-cancel" type="button">Отмена</button>
+          </div>
+        `;
+        taskList.appendChild(li);
+        const etDaysWrap = li.querySelector('#et-days');
+        const etSelectedDays = new Set(t.days);
+        DAY_LABELS.forEach((lbl,i)=>{
+          const b = document.createElement('button');
+          b.className='daybtn'+(etSelectedDays.has(i)?' on':''); b.textContent=lbl; b.type='button';
+          b.onclick = ()=>{ b.classList.toggle('on'); etSelectedDays.has(i)?etSelectedDays.delete(i):etSelectedDays.add(i); };
+          etDaysWrap.appendChild(b);
+        });
+        li.querySelector('#et-save').onclick = ()=>{
+          t.name = li.querySelector('#et-name').value.trim() || t.name;
+          t.points = parseInt(li.querySelector('#et-points').value)||1;
+          t.attr = li.querySelector('#et-attr').value || null;
+          const sx = parseFloat(li.querySelector('#et-skillxp').value);
+          t.skillXp = isNaN(sx)?1:sx;
+          t.days = [...etSelectedDays];
+          editingTaskId = null;
+          saveData(); renderTasks();
+        };
+        li.querySelector('#et-cancel').onclick = ()=>{ editingTaskId=null; renderTasks(); };
+      } else {
+        const attrPill = t.attr ? `<span class="pill">${icon(t.attr)} ${ATTR_DEFS[t.attr].label}</span>` : '';
+        const confirmPill = t.confirmRequired ? `<span class="pill">требует подтверждения</span>` : '';
+        li.innerHTML = `<span>${t.name} <span class="pill">${t.points} б.</span> ${attrPill} ${confirmPill} <span class="pill">${t.days.map(d=>DAY_LABELS[d]).join(' ')}</span></span>
+          <span><button class="icon-btn" data-edit-task="${t.id}">✎</button> <button class="icon-btn" data-del-task="${t.id}">✕</button></span>`;
+        taskList.appendChild(li);
+      }
     });
-    taskList.querySelectorAll('[data-vis-task]').forEach(cb=>cb.onchange=()=>{
-      const task = data.tasks.find(t=>t.id===cb.dataset.visTask);
-      task.active = cb.checked;
-      saveData(); renderTasks();
-    });
+    taskList.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>{ editingTaskId = b.dataset.editTask; renderTasks(); });
     taskList.querySelectorAll('[data-del-task]').forEach(b=>b.onclick=()=>{
-      data.tasks = data.tasks.filter(t=>t.id!==b.dataset.delTask);
+      data.weeklyPrograms[viewedMonday] = program.filter(t=>t.id!==b.dataset.delTask);
       saveData(); renderTasks();
     });
   }
 
-  document.getElementById('week-prev').onclick = ()=>{ tasksWeekOffset--; renderTasks(); };
-  document.getElementById('week-next').onclick = ()=>{ if(tasksWeekOffset<1) tasksWeekOffset++; renderTasks(); };
+  document.getElementById('week-prev').onclick = ()=>{ tasksWeekOffset--; editingTaskId=null; renderTasks(); };
+  document.getElementById('week-next').onclick = ()=>{ if(tasksWeekOffset<1) tasksWeekOffset++; editingTaskId=null; renderTasks(); };
 
-  // week grid — always visible and interactive (this is Samir's checklist)
+  // week grid — always visible; source is whatever was explicitly set for the viewed week
   const grid = document.getElementById('week-grid');
   grid.innerHTML = `<div></div>` + DAY_LABELS.map(l=>`<div class="hcell">${l}</div>`).join('');
-  const gridTasks = parentUnlocked ? data.tasks : data.tasks.filter(t=>t.active!==false);
+  const gridTasks = programForWeek(viewedMonday);
   if(gridTasks.length===0){
-    grid.innerHTML += `<div class="empty" style="grid-column:1/-1;">Пока нет заданий</div>`;
+    grid.innerHTML += `<div class="empty" style="grid-column:1/-1;">${parentUnlocked ? 'Пока нет заданий на эту неделю — добавь их ниже.' : 'На эту неделю пока ничего не добавлено.'}</div>`;
   }
   gridTasks.forEach(t=>{
-    grid.innerHTML += `<div class="taskname" style="${t.active===false?'opacity:.4;':''}">${t.attr?icon(t.attr)+' ':''}${t.name}${t.active===false?' <span class="pill">скрыто</span>':''}</div>`;
+    grid.innerHTML += `<div class="taskname">${t.attr?icon(t.attr)+' ':''}${t.name}</div>`;
     weekDates.forEach((dateStr, dayIdx)=>{
       if(!t.days.includes(dayIdx)){ grid.innerHTML += '<div></div>'; return; }
-      const notStartedYet = t.startDate && dateStr < t.startDate;
-      if(notStartedYet){ grid.innerHTML += '<div class="chk" style="opacity:.15;">·</div>'; return; }
       const entry = data.taskLog[dateStr] && data.taskLog[dateStr][t.id];
       const cls = entry ? (entry.status==='done' ? 'on' : '') : '';
       const mark = entry ? (entry.status==='done' ? '✓' : '⏳') : '';
-      const editable = (parentUnlocked || dateStr===todayStr()) && t.active!==false;
+      const editable = parentUnlocked || dateStr===todayStr();
       grid.innerHTML += `<div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div>`;
     });
   });
   grid.querySelectorAll('[data-toggle]').forEach(c=>c.onclick=()=>{
     const [dateStr, taskId] = c.dataset.toggle.split('|');
-    const task = data.tasks.find(t=>t.id===taskId);
+    const task = gridTasks.find(t=>t.id===taskId);
     if(!data.taskLog[dateStr]) data.taskLog[dateStr] = {};
     const existing = data.taskLog[dateStr][taskId];
     if(existing){
@@ -1595,6 +1652,11 @@ function renderSettings(){
       <p class="muted">Меняй, только если нужно скорректировать текущие значения вручную (не влияет на прошлые игры).</p>
       <div class="row" id="attr-edit"></div>
       <button class="primary" id="attr-save">Сохранить рейтинги</button>
+    </div>
+    <div class="card">
+      <h2>Сбросить накопленный опыт (XP)</h2>
+      <p class="muted">Обнуляет только зелёную полоску прогресса у всех навыков до следующего уровня — сами рейтинги не трогает. Нужно, если после старого теста где-то висит "лишний" XP.</p>
+      <button class="ghost" id="reset-xp">Обнулить XP всех навыков</button>
     </div>
   `;
 
@@ -1659,6 +1721,12 @@ function renderSettings(){
     });
     saveData(); renderAll();
     alert('Рейтинги обновлены, буфер опыта тоже сброшен в 0.');
+  };
+  document.getElementById('reset-xp').onclick = ()=>{
+    if(!confirm('Обнулить накопленный XP у всех навыков? Рейтинги (сами цифры) не изменятся.')) return;
+    Object.values(data.player.attributes).forEach(a=> a.xp = 0);
+    saveData(); renderAll();
+    alert('XP всех навыков обнулён.');
   };
 }
 
