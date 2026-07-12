@@ -164,9 +164,15 @@
   .milestone-list{margin-top:10px; font-size:12px;}
   .milestone-list .m-item{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06);}
   .m-item.done{color:var(--pos);}
-  .week-grid{display:grid; grid-template-columns:120px repeat(7,1fr); gap:4px; font-size:11px; align-items:center;}
-  .week-grid .hcell{text-align:center; color:var(--steel); font-family:'Oswald',sans-serif; text-transform:uppercase; padding:4px 0;}
-  .week-grid .taskname{font-size:12px; padding:4px 2px;}
+  .week-grid{display:grid; grid-template-columns:120px repeat(7,1fr); gap:0; font-size:11px; align-items:stretch;
+    border:1px solid rgba(255,255,255,.12); border-radius:8px; overflow:hidden;}
+  .week-grid > div{border-right:1px solid rgba(255,255,255,.08); border-bottom:1px solid rgba(255,255,255,.08); padding:4px; display:flex; align-items:center; justify-content:center;}
+  .week-grid > div:nth-child(8n){border-right:none;}
+  .week-grid .hcell{text-align:center; color:var(--steel); font-family:'Oswald',sans-serif; text-transform:uppercase; padding:6px 0;
+    background:rgba(255,255,255,.03); font-weight:600;}
+  .week-grid .taskname{font-size:12px; padding:4px 6px; justify-content:flex-start; text-align:left; background:rgba(255,255,255,.02);}
+  .week-grid .today-col{background:rgba(0,212,255,.1);}
+  .week-grid .hcell.today-col{background:rgba(0,212,255,.25); color:var(--electric); font-weight:800;}
   .chk{width:26px; height:26px; margin:0 auto; border-radius:6px; background:var(--panel-2); border:1px solid var(--steel);
     display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px;}
   .chk.on{background:var(--pos); border-color:var(--pos); color:var(--ice-deep); font-weight:700;}
@@ -235,7 +241,7 @@
 <script type="module">
 // ================= FIREBASE / FIRESTORE STORAGE =================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBp69nrVyCgl70Wh3kj6roWVPAdm0XlShk",
@@ -392,24 +398,45 @@ function requireParentUnlock(){
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
+// Live sync: instead of reading once at page load, we keep a standing connection.
+// Any change from either phone arrives here within roughly a second, so the in-memory
+// `data` never goes stale long enough for a save from the other device to erase it.
+let isFirstSnapshot = true;
+function initLiveSync(){
+  return new Promise((resolve)=>{
+    onSnapshot(appDocRef, (snap)=>{
+      if(snap.metadata.hasPendingWrites) return; // echo of our own not-yet-confirmed write — nothing new to apply
+      if(snap.exists() && snap.data().json){
+        data = Object.assign(defaultData(), JSON.parse(snap.data().json));
+      }
+      if(isFirstSnapshot){
+        isFirstSnapshot = false;
+        if(!data.weeklyPrograms || Object.keys(data.weeklyPrograms).length===0){
+          // migrate the old always-recurring task list into "this week"'s program, once
+          data.weeklyPrograms[mondayStr(todayStr())] = (data.tasks||[]).map(t=>({
+            id:t.id, name:t.name, points:t.points, attr:t.attr, skillXp:t.skillXp, days:t.days, confirmRequired:t.confirmRequired
+          }));
+        }
+        if(!data.fixedStaleShootingXp){
+          // one-time cleanup of leftover XP from an early build's weaker conversion-penalty bug
+          data.player.attributes.shooting.xp = 0;
+          data.fixedStaleShootingXp = true;
+        }
+        if(settleWeeks()) saveData();
+        renderAll();
+        resolve();
+      } else {
+        renderAll();
+      }
+    }, (err)=>{
+      console.error('live sync error', err);
+      alert('Потеряна связь с Firebase — проверь интернет-соединение. Изменения не будут сохраняться, пока связь не восстановится.');
+      resolve();
+    });
+  });
+}
 async function loadData(){
-  try{
-    const snap = await getDoc(appDocRef);
-    if(snap.exists() && snap.data().json){ data = Object.assign(defaultData(), JSON.parse(snap.data().json)); }
-  }catch(e){ console.error('load failed', e); alert('Не удалось загрузить данные из Firebase — проверь интернет-соединение.'); }
-  if(!data.weeklyPrograms || Object.keys(data.weeklyPrograms).length===0){
-    // migrate the old always-recurring task list into "this week"'s program, once
-    data.weeklyPrograms[mondayStr(todayStr())] = (data.tasks||[]).map(t=>({
-      id:t.id, name:t.name, points:t.points, attr:t.attr, skillXp:t.skillXp, days:t.days, confirmRequired:t.confirmRequired
-    }));
-  }
-  if(!data.fixedStaleShootingXp){
-    // one-time cleanup of leftover XP from an early build's weaker conversion-penalty bug
-    data.player.attributes.shooting.xp = 0;
-    data.fixedStaleShootingXp = true;
-  }
-  if(settleWeeks()) saveData();
-  renderAll();
+  await initLiveSync();
 }
 let saveTimer=null;
 async function saveData(){
@@ -421,6 +448,7 @@ async function saveData(){
     saveTimer=setTimeout(()=>bar.classList.remove('show'), 900);
   }catch(e){ console.error('save failed', e); alert('Не удалось сохранить — проверь интернет-соединение, изменения могут потеряться.'); }
 }
+
 
 // ================= HELPERS =================
 function monthKey(d){ return d.slice(0,7); } // 'YYYY-MM' from 'YYYY-MM-DD'
@@ -504,10 +532,11 @@ function computeAttrSubAverages(attrKey, lastN=5){
 
 function computeTaskContributions(attrKey){
   const allTasks = Object.values(data.weeklyPrograms).flat().filter(t=>t.attr===attrKey);
-  const byName = new Map(); // group by name — the same recurring task gets a fresh id every week, name is what actually identifies it to a person
+  const byName = new Map(); // group by normalized name — the same recurring task gets a fresh id every week, name is what actually identifies it to a person
   allTasks.forEach(t=>{
-    if(!byName.has(t.name)) byName.set(t.name, {name:t.name, count:0, totalXp:0});
-    const agg = byName.get(t.name);
+    const key = t.name.trim().toLowerCase();
+    if(!byName.has(key)) byName.set(key, {name:t.name.trim(), count:0, totalXp:0});
+    const agg = byName.get(key);
     const xpEach = t.skillXp ?? TASK_XP;
     Object.values(data.taskLog).forEach(entries=>{
       if(entries[t.id] && entries[t.id].status==='done'){ agg.count++; agg.totalXp += xpEach; }
@@ -1210,7 +1239,8 @@ function renderTraining(){
       </div>
       <h2>Тренировочный чек-лист</h2>
       <p class="muted">Максимум ${MAX_MARKS_PER_SESSION} отметки за тренировку — как на листе на стене. Отмечай только то, что было реальным действием.</p>
-      <div class="row"><div class="field"><label class="f">Дата тренировки</label><input type="date" id="tr-date"></div></div>
+      <div class="row"><div class="field"><label class="f">Дата тренировки</label><input type="date" id="tr-date" ${parentUnlocked?'':'readonly'}></div></div>
+      ${parentUnlocked ? '' : '<p class="muted" style="margin:-6px 0 10px;">Тренировку можно внести только сегодняшним числом — если день пропущен, задним числом его уже не поставить.</p>'}
       <div id="training-checklist"></div>
       <div class="muted" id="training-total" style="margin:8px 0;"></div>
       <button class="primary" id="save-training">Сохранить тренировку</button>
@@ -1288,7 +1318,7 @@ function renderTraining(){
   renderChecklist();
 
   document.getElementById('save-training').onclick = ()=>{
-    const date = document.getElementById('tr-date').value || todayStr();
+    const date = parentUnlocked ? (document.getElementById('tr-date').value || todayStr()) : todayStr();
     if(totalMarks()===0){ alert('Отметь хотя бы одно действие.'); return; }
     if(data.trainingLog[date]){
       alert('Эта дата уже внесена. Если это ошибка — удали запись в истории тренировок ниже и внеси заново.');
@@ -1589,7 +1619,8 @@ function renderTasks(){
 
   // week grid — always visible; source is whatever was explicitly set for the viewed week
   const grid = document.getElementById('week-grid');
-  grid.innerHTML = `<div></div>` + DAY_LABELS.map(l=>`<div class="hcell">${l}</div>`).join('');
+  const todayIdx = weekDates.indexOf(todayStr());
+  grid.innerHTML = `<div></div>` + DAY_LABELS.map((l,i)=>`<div class="hcell${i===todayIdx?' today-col':''}">${l}</div>`).join('');
   const gridTasks = programForWeek(viewedMonday);
   if(gridTasks.length===0){
     grid.innerHTML += `<div class="empty" style="grid-column:1/-1;">${parentUnlocked ? 'Пока нет заданий на эту неделю — добавь их ниже.' : 'На эту неделю пока ничего не добавлено.'}</div>`;
@@ -1597,12 +1628,13 @@ function renderTasks(){
   gridTasks.forEach(t=>{
     grid.innerHTML += `<div class="taskname">${t.attr?icon(t.attr)+' ':''}${t.name}</div>`;
     weekDates.forEach((dateStr, dayIdx)=>{
-      if(!t.days.includes(dayIdx)){ grid.innerHTML += '<div></div>'; return; }
+      const isToday = dayIdx===todayIdx;
+      if(!t.days.includes(dayIdx)){ grid.innerHTML += `<div class="${isToday?'today-col':''}"></div>`; return; }
       const entry = data.taskLog[dateStr] && data.taskLog[dateStr][t.id];
       const cls = entry ? (entry.status==='done' ? 'on' : '') : '';
       const mark = entry ? (entry.status==='done' ? '✓' : '⏳') : '';
       const editable = parentUnlocked || dateStr===todayStr();
-      grid.innerHTML += `<div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div>`;
+      grid.innerHTML += `<div class="chk ${cls} ${isToday?'today-col':''}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div>`;
     });
   });
   grid.querySelectorAll('[data-toggle]').forEach(c=>c.onclick=()=>{
