@@ -164,21 +164,20 @@
   .milestone-list{margin-top:10px; font-size:12px;}
   .milestone-list .m-item{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06);}
   .m-item.done{color:var(--pos);}
-  .week-grid{display:grid; grid-template-columns:120px repeat(7,1fr); gap:0; font-size:11px; align-items:stretch;
-    border:1px solid rgba(255,255,255,.12); border-radius:8px; overflow:hidden;}
-  .week-grid > div{border-right:1px solid rgba(255,255,255,.08); border-bottom:1px solid rgba(255,255,255,.08); padding:4px; display:flex; align-items:center; justify-content:center;}
-  .week-grid > div:nth-child(8n){border-right:none;}
-  .week-grid .hcell{text-align:center; color:var(--steel); font-family:'Oswald',sans-serif; text-transform:uppercase; padding:6px 0;
-    background:rgba(255,255,255,.03); font-weight:600;}
-  .week-grid .taskname{font-size:12px; padding:4px 6px; justify-content:flex-start; text-align:left; background:rgba(255,255,255,.02);}
-  .week-grid .today-col{background:rgba(0,212,255,.1);}
-  .week-grid .hcell.today-col{background:rgba(0,212,255,.25); color:var(--electric); font-weight:800;}
-  .chk{width:26px; height:26px; margin:0 auto; border-radius:6px; background:var(--panel-2); border:1px solid var(--steel);
-    display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:14px;}
-  .chk.on{background:var(--pos); border-color:var(--pos); color:var(--ice-deep); font-weight:700;}
+  .week-table{width:100%; border-collapse:collapse; table-layout:fixed; border-radius:8px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.35);}
+  .week-table th, .week-table td{border:1px solid rgba(255,255,255,.22); padding:6px 4px; text-align:center; vertical-align:middle;
+    font-size:11px; box-sizing:border-box;}
+  .week-table th{background:rgba(255,255,255,.06); font-family:'Oswald',sans-serif; text-transform:uppercase; font-weight:700; color:var(--steel);}
+  .week-table td.taskname{text-align:left; font-size:12px; font-weight:500; background:rgba(255,255,255,.03);}
+  .week-table .today-col{background:rgba(0,212,255,.14);}
+  .week-table th.today-col{background:rgba(0,212,255,.3); color:var(--electric); font-weight:800;}
+  .chk{width:24px; height:24px; border-radius:6px; background:var(--ice-deep); border:1px solid var(--steel);
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:13px; line-height:1;}
+  .chk.on{background:var(--pos); border-color:var(--pos); color:var(--ice-deep); font-weight:800;}
   @media(max-width:600px){
-    .week-grid{grid-template-columns:90px repeat(7,1fr); font-size:10px;}
-    .chk{width:22px; height:22px;}
+    .week-table th, .week-table td{padding:4px 2px; font-size:9.5px;}
+    .chk{width:20px; height:20px; font-size:11px;}
   }
   .savebar{position:fixed; bottom:14px; right:14px; font-size:11px; color:var(--steel); background:var(--panel); padding:6px 12px; border-radius:999px; opacity:0; transition:opacity .3s; z-index:5;}
   .savebar.show{opacity:1;}
@@ -1483,7 +1482,7 @@ function renderTasks(){
         </div>
       </div>
       <div class="muted" style="font-size:11px; margin-bottom:8px;">Сегодня: ${DAY_LABELS[weekdayIndex(todayStr())]}, ${todayStr()}</div>
-      <div class="week-grid" id="week-grid"></div>
+      <div class="chart-wrap"><table class="week-table" id="week-grid"></table></div>
     </div>
 
     ${parentUnlocked && (tasksWeekOffset===0 || tasksWeekOffset===1) ? `
@@ -1620,23 +1619,29 @@ function renderTasks(){
   // week grid — always visible; source is whatever was explicitly set for the viewed week
   const grid = document.getElementById('week-grid');
   const todayIdx = weekDates.indexOf(todayStr());
-  grid.innerHTML = `<div></div>` + DAY_LABELS.map((l,i)=>`<div class="hcell${i===todayIdx?' today-col':''}">${l}</div>`).join('');
   const gridTasks = programForWeek(viewedMonday);
+
+  let theadHtml = `<thead><tr><th></th>${DAY_LABELS.map((l,i)=>`<th class="${i===todayIdx?'today-col':''}">${l}</th>`).join('')}</tr></thead>`;
+  let tbodyHtml = '<tbody>';
   if(gridTasks.length===0){
-    grid.innerHTML += `<div class="empty" style="grid-column:1/-1;">${parentUnlocked ? 'Пока нет заданий на эту неделю — добавь их ниже.' : 'На эту неделю пока ничего не добавлено.'}</div>`;
+    tbodyHtml += `<tr><td colspan="8" class="empty">${parentUnlocked ? 'Пока нет заданий на эту неделю — добавь их ниже.' : 'На эту неделю пока ничего не добавлено.'}</td></tr>`;
   }
   gridTasks.forEach(t=>{
-    grid.innerHTML += `<div class="taskname">${t.attr?icon(t.attr)+' ':''}${t.name}</div>`;
+    tbodyHtml += `<tr><td class="taskname">${t.attr?icon(t.attr)+' ':''}${t.name}</td>`;
     weekDates.forEach((dateStr, dayIdx)=>{
       const isToday = dayIdx===todayIdx;
-      if(!t.days.includes(dayIdx)){ grid.innerHTML += `<div class="${isToday?'today-col':''}"></div>`; return; }
+      if(!t.days.includes(dayIdx)){ tbodyHtml += `<td class="${isToday?'today-col':''}"></td>`; return; }
       const entry = data.taskLog[dateStr] && data.taskLog[dateStr][t.id];
       const cls = entry ? (entry.status==='done' ? 'on' : '') : '';
       const mark = entry ? (entry.status==='done' ? '✓' : '⏳') : '';
       const editable = parentUnlocked || dateStr===todayStr();
-      grid.innerHTML += `<div class="chk ${cls} ${isToday?'today-col':''}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div>`;
+      tbodyHtml += `<td class="${isToday?'today-col':''}"><div class="chk ${cls}" style="${entry && entry.status==='pending' ? 'background:var(--gold); color:var(--ice-deep); border-color:var(--gold);':''} ${editable?'':'opacity:.3; cursor:not-allowed;'}" ${editable?`data-toggle="${dateStr}|${t.id}"`:''}>${mark}</div></td>`;
     });
+    tbodyHtml += '</tr>';
   });
+  tbodyHtml += '</tbody>';
+  grid.innerHTML = theadHtml + tbodyHtml;
+
   grid.querySelectorAll('[data-toggle]').forEach(c=>c.onclick=()=>{
     const [dateStr, taskId] = c.dataset.toggle.split('|');
     const task = gridTasks.find(t=>t.id===taskId);
