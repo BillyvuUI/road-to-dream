@@ -165,26 +165,64 @@
   .milestone-list .m-item{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.06);}
   .m-item.done{color:var(--pos);}
   .week-table{width:100%; border-collapse:collapse; table-layout:fixed; border-radius:8px; overflow:hidden;
-border:1px solid rgba(255,255,255,.35);}
-.week-table th, .week-table td{border:1px solid rgba(255,255,255,.22); padding:6px 4px; text-align:center; vertical-align:middle;
-font-size:11px; box-sizing:border-box;}
-.week-table th{background:rgba(255,255,255,.06); font-family:'Oswald',sans-serif; text-transform:uppercase; font-weight:700; color:var(--steel);}
-.week-table th:first-child, .week-table td:first-child{width:34%;}
-.week-table td.taskname{text-align:left; font-size:12px; font-weight:500; background:rgba(255,255,255,.03);
-overflow-wrap:break-word; word-break:break-word; white-space:normal; line-height:1.25; hyphens:auto;}
-.week-table .today-col{background:rgba(0,212,255,.14);}
-.week-table th.today-col{background:rgba(0,212,255,.3); color:var(--electric); font-weight:800;}
-.chk{width:24px; height:24px; border-radius:6px; background:var(--ice-deep); border:1px solid var(--steel);
-display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:13px; line-height:1;}
-.chk.on{background:var(--pos); border-color:var(--pos); color:var(--ice-deep); font-weight:800;}
-@media(max-width:600px){
-.week-table th, .week-table td{padding:4px 2px; font-size:9.5px;}
-.week-table th:first-child, .week-table td:first-child{width:30%;}
-.week-table td.taskname{font-size:10px;}
-.chk{width:20px; height:20px; font-size:11px;}
-}
+    border:1px solid rgba(255,255,255,.35);}
+  .week-table th, .week-table td{border:1px solid rgba(255,255,255,.22); padding:6px 4px; text-align:center; vertical-align:middle;
+    font-size:11px; box-sizing:border-box;}
+  .week-table th{background:rgba(255,255,255,.06); font-family:'Oswald',sans-serif; text-transform:uppercase; font-weight:700; color:var(--steel);}
+  .week-table th:first-child, .week-table td:first-child{width:34%;}
+  .week-table td.taskname{text-align:left; font-size:12px; font-weight:500; background:rgba(255,255,255,.03);
+    overflow-wrap:break-word; word-break:break-word; white-space:normal; line-height:1.25; hyphens:auto;}
+  .week-table .today-col{background:rgba(0,212,255,.14);}
+  .week-table th.today-col{background:rgba(0,212,255,.3); color:var(--electric); font-weight:800;}
+  .chk{width:24px; height:24px; border-radius:6px; background:var(--ice-deep); border:1px solid var(--steel);
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer; font-size:13px; line-height:1;}
+  .chk.on{background:var(--pos); border-color:var(--pos); color:var(--ice-deep); font-weight:800;}
+  @media(max-width:600px){
+    .week-table th, .week-table td{padding:4px 2px; font-size:9.5px;}
+    .week-table th:first-child, .week-table td:first-child{width:30%;}
+    .week-table td.taskname{font-size:10px;}
+    .chk{width:20px; height:20px; font-size:11px;}
+  }
   .savebar{position:fixed; bottom:14px; right:14px; font-size:11px; color:var(--steel); background:var(--panel); padding:6px 12px; border-radius:999px; opacity:0; transition:opacity .3s; z-index:5;}
   .savebar.show{opacity:1;}
+
+  .chest-row{display:flex; gap:14px; flex-wrap:wrap; justify-content:center; padding:10px 0;}
+  .chest-box{width:112px; padding:14px 8px 14px; border-radius:14px; text-align:center; position:relative; overflow:hidden;
+    background:linear-gradient(155deg,var(--panel),var(--panel-2)); border:2px solid rgba(255,255,255,.1); transition:.15s;}
+  .chest-box.locked{opacity:.55;}
+  .chest-box.unlocked, .chest-box.preview{cursor:pointer; border-color:var(--gold); box-shadow:0 0 18px rgba(255,184,28,.35);}
+  .chest-box.unlocked:hover, .chest-box.preview:hover{transform:translateY(-2px);}
+  .chest-svg{width:78px; height:70px; display:block; margin:0 auto; overflow:visible;}
+  .chest-box.locked .chest-svg{filter:grayscale(.8) brightness(.6);}
+  .chest-lock-badge{display:none; position:absolute; top:38px; left:50%; transform:translateX(-50%); font-size:20px;
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));}
+  .chest-box.locked .chest-lock-badge{display:block;}
+  .chest-lid{transform-box:fill-box; transform-origin:50% 100%; transition:transform .5s cubic-bezier(.34,1.56,.64,1);}
+  .chest-box.opened-anim .chest-lid{transform:rotate(-38deg) translateY(-6%);}
+  .chest-glow{fill:var(--gold-2); opacity:0; transform-box:fill-box; transform-origin:center;}
+  .chest-box.opened-anim .chest-glow{animation:glowBurst .7s ease-out forwards;}
+  @keyframes glowBurst{0%{opacity:0; transform:scale(.3);} 35%{opacity:.85; transform:scale(1.3);} 100%{opacity:0; transform:scale(2);}}
+  .spark{fill:var(--gold-2); opacity:0; transform-box:fill-box; transform-origin:center;}
+  .chest-box.opened-anim .s1{animation:sparkFly1 .8s ease-out .08s forwards;}
+  .chest-box.opened-anim .s2{animation:sparkFly2 .8s ease-out .14s forwards;}
+  .chest-box.opened-anim .s3{animation:sparkFly3 .8s ease-out .2s forwards;}
+  .chest-box.opened-anim .s4{animation:sparkFly4 .8s ease-out .26s forwards;}
+  @keyframes sparkFly1{0%{opacity:0; transform:translate(0,0) scale(.5);} 30%{opacity:1;} 100%{opacity:0; transform:translate(-26px,-34px) scale(1.3);}}
+  @keyframes sparkFly2{0%{opacity:0; transform:translate(0,0) scale(.5);} 30%{opacity:1;} 100%{opacity:0; transform:translate(26px,-36px) scale(1.3);}}
+  @keyframes sparkFly3{0%{opacity:0; transform:translate(0,0) scale(.5);} 30%{opacity:1;} 100%{opacity:0; transform:translate(-14px,-44px) scale(1.3);}}
+  @keyframes sparkFly4{0%{opacity:0; transform:translate(0,0) scale(.5);} 30%{opacity:1;} 100%{opacity:0; transform:translate(14px,-42px) scale(1.3);}}
+  .chest-threshold{font-family:'Oswald',sans-serif; font-weight:700; font-size:13px; margin-top:2px;}
+  .chest-progress{font-size:10px; margin-top:2px; color:var(--steel);}
+  .chest-collected{font-size:10px; color:var(--pos); margin-top:4px; font-weight:700;}
+  @keyframes chestShake{0%,100%{transform:rotate(0);} 20%{transform:rotate(-6deg);} 40%{transform:rotate(6deg);} 60%{transform:rotate(-4deg);} 80%{transform:rotate(4deg);}}
+  .chest-box.shaking{animation:chestShake .5s ease;}
+  .reward-banner{margin-top:14px; padding:22px 16px; text-align:center; border-radius:14px;
+    background:linear-gradient(155deg, var(--gold-2), var(--gold)); color:var(--ice-deep);
+    transform:scale(0); opacity:0; box-shadow:0 8px 30px rgba(255,184,28,.4);}
+  .reward-banner.pop-in{animation:bannerPop .55s cubic-bezier(.34,1.56,.64,1) forwards;}
+  @keyframes bannerPop{0%{transform:scale(0) rotate(-8deg); opacity:0;} 60%{transform:scale(1.1) rotate(3deg); opacity:1;} 100%{transform:scale(1) rotate(0); opacity:1;}}
+  .reward-banner-icon{font-size:46px;}
+  .reward-banner-text{font-family:'Oswald',sans-serif; font-weight:800; font-size:18px; margin-top:8px;}
   fieldset{border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:10px; margin-bottom:10px;}
   legend{font-family:'Oswald',sans-serif; font-size:12px; color:var(--gold); text-transform:uppercase; letter-spacing:.5px; padding:0 6px;}
 
@@ -228,6 +266,7 @@ display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
     <button data-tab="team">Моя команда</button>
     <button data-tab="training">Тренировки</button>
     <button data-tab="tasks">Задания</button>
+    <button data-tab="rewards">Награды</button>
     <button data-tab="settings">Настройки</button>
   </nav>
 
@@ -237,14 +276,19 @@ display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
   <section id="tab-team"></section>
   <section id="tab-training"></section>
   <section id="tab-tasks"></section>
+  <section id="tab-rewards"></section>
   <section id="tab-settings"></section>
 </div>
 <div class="savebar" id="savebar">сохранено</div>
+<div id="offline-banner" style="display:none; position:fixed; top:0; left:0; right:0; z-index:20; background:var(--rink-line);
+  color:#fff; text-align:center; padding:8px; font-size:12px; font-weight:600;">
+  ⚠️ Нет интернета — изменения появятся только когда связь вернётся. Не закрывай приложение сейчас.
+</div>
 
 <script type="module">
 // ================= FIREBASE / FIRESTORE STORAGE =================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBp69nrVyCgl70Wh3kj6roWVPAdm0XlShk",
@@ -255,7 +299,9 @@ const firebaseConfig = {
   appId: "1:1001601715328:web:bf56d143798063cea1ea65",
 };
 const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
+const db = initializeFirestore(fbApp, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
+});
 const appDocRef = doc(db, 'appdata', 'samir');
 
 const LEVEL_XP = 15; // XP needed per level, editable
@@ -384,6 +430,7 @@ function defaultData(){
     ],
     parentPin: DEFAULT_PARENT_PIN,
     bonusLedger: [],
+    rewardsOpened: {}, // { 'monthly-2026-07-70': true, 'yearly-2026-1200': true, ... } — purely cosmetic "collected" badge
     lineup: {}
   };
 }
@@ -1666,6 +1713,125 @@ function renderTasks(){
 }
 
 // ================= RENDER: SETTINGS =================
+// ================= RENDER: REWARDS =================
+function renderRewards(){
+  const el = document.getElementById('tab-rewards');
+  const now = new Date();
+  const curMonthKey = now.toISOString().slice(0,7);
+  const curYear = String(now.getFullYear());
+  let monthTotal = 0, yearTotal = 0;
+  Object.entries(data.taskLog).forEach(([date, entries])=>{
+    const sum = Object.values(entries).filter(e=>e.status==='done').reduce((s,e)=>s+e.points,0);
+    if(date.startsWith(curMonthKey)) monthTotal += sum;
+    if(date.startsWith(curYear)) yearTotal += sum;
+  });
+  data.bonusLedger.forEach(b=>{
+    if(b.date.startsWith(curMonthKey)) monthTotal += b.points;
+    if(b.date.startsWith(curYear)) yearTotal += b.points;
+  });
+
+  function buildChests(list, total, keyPrefix, period){
+    return list.slice().sort((a,b)=>a.threshold-b.threshold).map(m=>{
+      const key = `${keyPrefix}-${m.threshold}`;
+      return { key, period, threshold:m.threshold, reward:m.reward, unlocked: total>=m.threshold, opened: !!data.rewardsOpened[key], progress: total };
+    });
+  }
+  const monthlyChests = buildChests(data.milestones.monthly, monthTotal, `monthly-${curMonthKey}`, 'monthly');
+  const yearlyChests = buildChests(data.milestones.yearly, yearTotal, `yearly-${curYear}`, 'yearly');
+
+  function chestSvg(){
+    return `
+      <svg viewBox="0 0 100 90" class="chest-svg">
+        <ellipse class="chest-glow" cx="50" cy="48" rx="28" ry="10"></ellipse>
+        <g class="chest-sparkles">
+          <circle class="spark s1" cx="50" cy="35" r="3"></circle>
+          <circle class="spark s2" cx="50" cy="35" r="2.2"></circle>
+          <circle class="spark s3" cx="50" cy="35" r="2.6"></circle>
+          <circle class="spark s4" cx="50" cy="35" r="2.2"></circle>
+        </g>
+        <g class="chest-base">
+          <rect x="14" y="44" width="72" height="34" rx="6" fill="#8B5A2B" stroke="#5c3a1a" stroke-width="2"></rect>
+          <rect x="14" y="58" width="72" height="6" fill="#FFB81C"></rect>
+          <circle cx="50" cy="61" r="6" fill="#FFB81C" stroke="#5c3a1a" stroke-width="1.5"></circle>
+        </g>
+        <g class="chest-lid">
+          <path d="M14 44 Q14 18 50 16 Q86 18 86 44 Z" fill="#A56B34" stroke="#5c3a1a" stroke-width="2"></path>
+          <rect x="14" y="39" width="72" height="7" fill="#FFB81C"></rect>
+        </g>
+      </svg>
+      <div class="chest-lock-badge">🔒</div>`;
+  }
+  function chestHtml(c){
+    const clickable = c.unlocked || parentUnlocked;
+    return `
+      <div class="chest-box ${c.unlocked?'unlocked':(parentUnlocked?'preview':'locked')}" data-chest="${c.key}" data-real="${c.unlocked}"
+           data-period="${c.period}" data-threshold="${c.threshold}" data-reward="${c.reward.replace(/"/g,'&quot;')}">
+        ${chestSvg()}
+        <div class="chest-threshold">${c.threshold} очков</div>
+        <div class="chest-progress">${Math.min(c.progress,c.threshold)}/${c.threshold}</div>
+        ${c.opened?'<div class="chest-collected">✓ Открыт</div>':(c.unlocked?'<div class="chest-collected" style="color:var(--gold);">Жми!</div>':(parentUnlocked?'<div class="chest-collected" style="color:var(--electric);">Просмотр</div>':''))}
+        ${parentUnlocked?`<button class="icon-btn" data-edit-reward="${c.key}" style="position:absolute; top:2px; right:2px; z-index:2;">✎</button>`:''}
+        ${!clickable?'':''}
+      </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="card">
+      <h2>Награды — этот месяц</h2>
+      <p class="muted">Набери очков за задания и стрики — сундук разблокируется сам, жми на него, когда откроется.${parentUnlocked?' В родительском режиме можно нажать на любой сундук — посмотреть анимацию заранее, до реального открытия.':''}</p>
+      <div class="chest-row">${monthlyChests.map(chestHtml).join('') || '<p class="empty">Майлстоуны не заданы</p>'}</div>
+    </div>
+    <div class="card">
+      <h2>Награда сезона</h2>
+      <div class="chest-row">${yearlyChests.map(chestHtml).join('') || '<p class="empty">Майлстоуны не заданы</p>'}</div>
+    </div>
+    <div id="chest-reveal"></div>
+  `;
+
+  el.querySelectorAll('.chest-box').forEach(box=>{
+    if(box.dataset.real!=='true' && !parentUnlocked) return; // locked + not parent = not clickable at all
+    box.style.cursor = 'pointer';
+    box.addEventListener('click', (e)=>{
+      if(e.target.closest('[data-edit-reward]')) return; // don't trigger open when clicking the edit pencil
+      box.classList.add('shaking');
+      setTimeout(()=>{
+        box.classList.remove('shaking');
+        box.classList.add('opened-anim');
+        const key = box.dataset.chest;
+        const isReal = box.dataset.real==='true';
+        if(isReal && !data.rewardsOpened[key]){
+          data.rewardsOpened[key] = true;
+          saveData();
+          if(!box.querySelector('.chest-collected')){
+            box.insertAdjacentHTML('beforeend', '<div class="chest-collected">✓ Открыт</div>');
+          }
+        }
+        setTimeout(()=>{
+          const reveal = document.getElementById('chest-reveal');
+          reveal.innerHTML = `<div class="reward-banner"><div class="reward-banner-icon">🏆</div><div class="reward-banner-text">${box.dataset.reward}</div>${!isReal?'<div style="font-size:11px; margin-top:8px; opacity:.7;">(предпросмотр, ещё не открыто по-настоящему)</div>':''}</div>`;
+          requestAnimationFrame(()=> reveal.querySelector('.reward-banner').classList.add('pop-in'));
+        }, 450);
+      }, 480);
+    });
+  });
+
+  if(parentUnlocked){
+    el.querySelectorAll('[data-edit-reward]').forEach(btn=>{
+      btn.onclick = (e)=>{
+        e.stopPropagation();
+        const box = btn.closest('.chest-box');
+        const period = box.dataset.period, threshold = parseInt(box.dataset.threshold);
+        const current = box.dataset.reward;
+        const next = prompt('Текст награды за ' + threshold + ' очков:', current);
+        if(next===null || next.trim()==='') return;
+        const list = period==='monthly' ? data.milestones.monthly : data.milestones.yearly;
+        const m = list.find(m=>m.threshold===threshold);
+        if(m){ m.reward = next.trim(); saveData(); renderRewards(); }
+      };
+    });
+  }
+}
+
 function renderSettings(){
   const el = document.getElementById('tab-settings');
   if(!parentUnlocked){
@@ -1801,8 +1967,17 @@ function renderAll(){
   renderTeam();
   renderTraining();
   renderTasks();
+  renderRewards();
   renderSettings();
 }
+
+function updateOfflineBanner(){
+  const banner = document.getElementById('offline-banner');
+  if(banner) banner.style.display = navigator.onLine ? 'none' : 'block';
+}
+window.addEventListener('online', updateOfflineBanner);
+window.addEventListener('offline', updateOfflineBanner);
+updateOfflineBanner();
 
 loadData();
 </script>
