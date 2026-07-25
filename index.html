@@ -223,6 +223,16 @@
   @keyframes bannerPop{0%{transform:scale(0) rotate(-8deg); opacity:0;} 60%{transform:scale(1.1) rotate(3deg); opacity:1;} 100%{transform:scale(1) rotate(0); opacity:1;}}
   .reward-banner-icon{font-size:46px;}
   .reward-banner-text{font-family:'Oswald',sans-serif; font-weight:800; font-size:18px; margin-top:8px;}
+  .reward-banner-sam{font-family:'Oswald',sans-serif; font-weight:800; font-size:22px; margin-top:6px; color:var(--ice-deep);
+    background:rgba(255,255,255,.35); display:inline-block; padding:2px 14px; border-radius:999px;}
+  .sam-wallet{display:flex; align-items:center; gap:10px; background:linear-gradient(155deg,var(--gold-2),var(--gold));
+    color:var(--ice-deep); border-radius:12px; padding:12px 16px; margin-bottom:14px;}
+  .sam-wallet-icon{font-size:28px;}
+  .sam-wallet-num{font-family:'Oswald',sans-serif; font-weight:800; font-size:22px;}
+  .sam-wallet-lbl{font-size:11px; opacity:.75;}
+  .shop-item{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 4px; border-bottom:1px solid rgba(255,255,255,.06);}
+  .shop-item:last-child{border-bottom:none;}
+  .shop-item-cost{font-family:'Oswald',sans-serif; font-weight:700; color:var(--gold); white-space:nowrap;}
   fieldset{border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:10px; margin-bottom:10px;}
   legend{font-family:'Oswald',sans-serif; font-size:12px; color:var(--gold); text-transform:uppercase; letter-spacing:.5px; padding:0 6px;}
 
@@ -388,12 +398,12 @@ function weeklyBonusForStreak(n){
 }
 const RECOMMENDED_MILESTONES = {
   monthly: [
-    {threshold:70, reward:'🥇 Голд — маленькая привилегия'},
-    {threshold:120, reward:'💎 Платина — привилегия побольше'},
-    {threshold:160, reward:'🌟 Супернова — большая награда'},
+    {threshold:70, reward:'🥇 Голд', samAmount:3},
+    {threshold:120, reward:'💎 Платина', samAmount:7},
+    {threshold:160, reward:'🌟 Супернова', samAmount:15},
   ],
   yearly: [
-    {threshold:1200, reward:'🌟 Годовая Супернова — большой бонус'},
+    {threshold:1200, reward:'🌟 Годовая Супернова', samAmount:40},
   ]
 };
 
@@ -431,6 +441,22 @@ function defaultData(){
     parentPin: DEFAULT_PARENT_PIN,
     bonusLedger: [],
     rewardsOpened: {}, // { 'monthly-2026-07-70': true, 'yearly-2026-1200': true, ... } — purely cosmetic "collected" badge
+    samBalance: 0,
+    samLedger: [], // {date, delta, reason} — full history of Sam earned/spent/refunded
+    shopItems: [
+      {id:'sh1', name:'+30 минут телефона', cost:1, capPerMonth:null},
+      {id:'sh2', name:'Пельмени', cost:3, capPerMonth:2},
+      {id:'sh3', name:'Вкусняшка из магазина', cost:5, capPerMonth:2},
+      {id:'sh4', name:'Мясной пирог', cost:6, capPerMonth:2},
+      {id:'sh5', name:'Такси вместо автобуса', cost:7, capPerMonth:null},
+      {id:'sh6', name:'Безлимит на день', cost:8, capPerMonth:null},
+      {id:'sh7', name:'Батутный центр / боулинг / картинг', cost:20, capPerMonth:null},
+      {id:'sh8', name:'Заморозка стрика на 1 день', cost:30, capPerMonth:null},
+      {id:'sh9', name:'Барбекю дома', cost:45, capPerMonth:null},
+      {id:'sh10', name:'5000 тенге', cost:60, capPerMonth:null},
+      {id:'sh11', name:'Отпроситься со школы', cost:75, capPerMonth:null},
+    ],
+    redemptions: [], // {id, itemId, itemName, cost, date, status:'pending'|'fulfilled'|'rejected'}
     lineup: {}
   };
 }
@@ -451,11 +477,31 @@ function uid(){ return Math.random().toString(36).slice(2,10); }
 // Live sync: instead of reading once at page load, we keep a standing connection.
 // Any change from either phone arrives here within roughly a second, so the in-memory
 // `data` never goes stale long enough for a save from the other device to erase it.
+//
+// IMPORTANT: with persistentLocalCache enabled, the FIRST snapshot after opening the app
+// is very often served straight from the on-disk cache (snap.metadata.fromCache === true)
+// before the real server round-trip completes — this is especially likely after the app
+// has been closed for days. That cached copy can be stale (missing whatever the other
+// phone wrote while this device was closed). We must never let a stale cached snapshot
+// drive settleWeeks()/migrations/saveData() — that was the exact bug that silently
+// overwrote a correct week of streak data with a week-old local copy. We show the cached
+// data immediately (so the UI isn't blank), but only run the mutating logic once we get
+// a snapshot confirmed to be from the server.
 let isFirstSnapshot = true;
 function initLiveSync(){
   return new Promise((resolve)=>{
     onSnapshot(appDocRef, (snap)=>{
       if(snap.metadata.hasPendingWrites) return; // echo of our own not-yet-confirmed write — nothing new to apply
+
+      if(snap.metadata.fromCache && isFirstSnapshot){
+        // Stale-or-unconfirmed local copy — show it for responsiveness only, never settle/save from it.
+        if(snap.exists() && snap.data().json){
+          data = Object.assign(defaultData(), JSON.parse(snap.data().json));
+          renderAll();
+        }
+        return;
+      }
+
       if(snap.exists() && snap.data().json){
         data = Object.assign(defaultData(), JSON.parse(snap.data().json));
       }
@@ -471,6 +517,18 @@ function initLiveSync(){
           // one-time cleanup of leftover XP from an early build's weaker conversion-penalty bug
           data.player.attributes.shooting.xp = 0;
           data.fixedStaleShootingXp = true;
+        }
+        if(!data.fixedMissingSamAmounts){
+          // backfill Sam coin amounts on milestones saved before the wallet/shop system existed
+          const fillSam = (list, recList)=> list.forEach(m=>{
+            if(m.samAmount===undefined || m.samAmount===null){
+              const match = recList.find(r=>r.threshold===m.threshold);
+              m.samAmount = match ? match.samAmount : 5;
+            }
+          });
+          fillSam(data.milestones.monthly, RECOMMENDED_MILESTONES.monthly);
+          fillSam(data.milestones.yearly, RECOMMENDED_MILESTONES.yearly);
+          data.fixedMissingSamAmounts = true;
         }
         if(settleWeeks()) saveData();
         renderAll();
@@ -681,6 +739,7 @@ function renderPlayer(){
           <div class="gg-line"><span>Задания сегодня</span><b>${todayDone}/${todayTasks.length||0}</b></div>
           <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${todayTasks.length?todayDone/todayTasks.length*100:0}%"></div></div>
           <div class="gg-line" style="margin-top:10px;"><span>🔥 Недель без пропусков</span><b>${data.habit.perfectWeeks}</b></div>
+          <div class="gg-line" style="margin-top:10px;"><span>🪙 Sam на счету</span><b>${data.samBalance}</b></div>
         </div>
       </div>
 
@@ -1714,6 +1773,7 @@ function renderTasks(){
 
 // ================= RENDER: SETTINGS =================
 // ================= RENDER: REWARDS =================
+let editingShopItemId = null;
 function renderRewards(){
   const el = document.getElementById('tab-rewards');
   const now = new Date();
@@ -1733,7 +1793,7 @@ function renderRewards(){
   function buildChests(list, total, keyPrefix, period){
     return list.slice().sort((a,b)=>a.threshold-b.threshold).map(m=>{
       const key = `${keyPrefix}-${m.threshold}`;
-      return { key, period, threshold:m.threshold, reward:m.reward, unlocked: total>=m.threshold, opened: !!data.rewardsOpened[key], progress: total };
+      return { key, period, threshold:m.threshold, reward:m.reward, samAmount:m.samAmount||0, unlocked: total>=m.threshold, opened: !!data.rewardsOpened[key], progress: total };
     });
   }
   const monthlyChests = buildChests(data.milestones.monthly, monthTotal, `monthly-${curMonthKey}`, 'monthly');
@@ -1765,7 +1825,7 @@ function renderRewards(){
     const clickable = c.unlocked || parentUnlocked;
     return `
       <div class="chest-box ${c.unlocked?'unlocked':(parentUnlocked?'preview':'locked')}" data-chest="${c.key}" data-real="${c.unlocked}"
-           data-period="${c.period}" data-threshold="${c.threshold}" data-reward="${c.reward.replace(/"/g,'&quot;')}">
+           data-period="${c.period}" data-threshold="${c.threshold}" data-sam="${c.samAmount||0}" data-reward="${c.reward.replace(/"/g,'&quot;')}">
         ${chestSvg()}
         <div class="chest-threshold">${c.threshold} очков</div>
         <div class="chest-progress">${Math.min(c.progress,c.threshold)}/${c.threshold}</div>
@@ -1775,7 +1835,20 @@ function renderRewards(){
       </div>`;
   }
 
+  const curMonthKeyForCaps = curMonthKey;
+  function redemptionsThisMonth(itemId){
+    return data.redemptions.filter(r=> r.itemId===itemId && r.status!=='rejected' && r.date.startsWith(curMonthKeyForCaps)).length;
+  }
+  const pendingRedemptions = data.redemptions.filter(r=>r.status==='pending');
+
   el.innerHTML = `
+    <div class="sam-wallet">
+      <div class="sam-wallet-icon">🪙</div>
+      <div>
+        <div class="sam-wallet-num" id="sam-balance-num">${data.samBalance}</div>
+        <div class="sam-wallet-lbl">Sam на счету</div>
+      </div>
+    </div>
     <div class="card">
       <h2>Награды — этот месяц</h2>
       <p class="muted">Набери очков за задания и стрики — сундук разблокируется сам, жми на него, когда откроется.${parentUnlocked?' В родительском режиме можно нажать на любой сундук — посмотреть анимацию заранее, до реального открытия.':''}</p>
@@ -1786,7 +1859,126 @@ function renderRewards(){
       <div class="chest-row">${yearlyChests.map(chestHtml).join('') || '<p class="empty">Майлстоуны не заданы</p>'}</div>
     </div>
     <div id="chest-reveal"></div>
+
+    ${parentUnlocked && pendingRedemptions.length>0 ? `
+    <div class="card">
+      <h2>Ожидают выдачи</h2>
+      <ul class="list">
+        ${pendingRedemptions.map(r=>`<li><span>${r.itemName} <span class="pill">${r.cost} Sam</span> <span class="muted">${r.date}</span></span>
+          <span><button class="ghost" data-fulfill="${r.id}">✓ Выдано</button>
+          <button class="icon-btn" data-cancel-redeem="${r.id}">✕ Отменить</button></span></li>`).join('')}
+      </ul>
+    </div>` : ''}
+
+    <div class="card">
+      <h2>История покупок</h2>
+      <ul class="list">
+        ${[...data.redemptions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,20).map(r=>{
+          const statusLabel = r.status==='fulfilled' ? '<span class="pill" style="color:var(--pos);">✓ Выдано</span>'
+            : r.status==='rejected' ? '<span class="pill" style="color:var(--neg);">✕ Отменено</span>'
+            : '<span class="pill" style="color:var(--gold);">⏳ Ожидает</span>';
+          return `<li><span>${r.itemName} <span class="pill">${r.cost} Sam</span> <span class="muted">${r.date}</span></span>${statusLabel}</li>`;
+        }).join('') || '<li class="empty">Пока ничего не покупал</li>'}
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Магазин</h2>
+      <p class="muted">${parentUnlocked ? 'Список товаров, по возрастанию цены — можно добавлять/редактировать/удалять ниже.' : 'Выбери, на что потратить Sam. Родитель подтвердит и выдаст.'}</p>
+      <div id="shop-list">
+        ${[...data.shopItems].sort((a,b)=>a.cost-b.cost).map(item=>{
+          const capReached = item.capPerMonth && redemptionsThisMonth(item.id) >= item.capPerMonth;
+          const canAfford = data.samBalance >= item.cost;
+          const disabled = capReached || !canAfford;
+          if(editingShopItemId===item.id){
+            return `<div class="shop-item" style="display:block;">
+              <div class="row">
+                <input id="es-name" value="${item.name}" style="flex:2;">
+                <input id="es-cost" type="number" min="1" value="${item.cost}" style="max-width:90px;">
+                <input id="es-cap" type="number" min="1" placeholder="Лимит/мес" value="${item.capPerMonth||''}" style="max-width:120px;">
+              </div>
+              <div class="row">
+                <button class="primary" id="es-save" data-shop-id="${item.id}">Сохранить</button>
+                <button class="ghost" id="es-cancel">Отмена</button>
+              </div>
+            </div>`;
+          }
+          return `<div class="shop-item">
+            <span>${item.name} ${item.capPerMonth?`<span class="pill">макс ${item.capPerMonth}/мес</span>`:''}</span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              <span class="shop-item-cost">${item.cost} Sam</span>
+              <button class="ghost" data-buy="${item.id}" ${disabled?'disabled':''}>${capReached?'Лимит':'Купить'}</button>
+              ${parentUnlocked?`<button class="icon-btn" data-edit-shop="${item.id}">✎</button><button class="icon-btn" data-del-shop="${item.id}">✕</button>`:''}
+            </span>
+          </div>`;
+        }).join('') || '<p class="empty">Магазин пуст</p>'}
+      </div>
+      ${parentUnlocked ? `
+      <div class="row" style="margin-top:12px;">
+        <input id="shop-name" placeholder="Название товара" style="flex:2;">
+        <input id="shop-cost" type="number" min="1" placeholder="Sam" style="max-width:90px;">
+        <input id="shop-cap" type="number" min="1" placeholder="Лимит/мес (необязательно)" style="max-width:150px;">
+        <button class="primary" id="shop-add">Добавить</button>
+      </div>` : ''}
+    </div>
   `;
+
+  if(parentUnlocked){
+    el.querySelectorAll('[data-fulfill]').forEach(b=>b.onclick=()=>{
+      const r = data.redemptions.find(r=>r.id===b.dataset.fulfill);
+      if(r){ r.status='fulfilled'; saveData(); renderRewards(); }
+    });
+    el.querySelectorAll('[data-cancel-redeem]').forEach(b=>b.onclick=()=>{
+      const r = data.redemptions.find(r=>r.id===b.dataset.cancelRedeem);
+      if(r){
+        r.status='rejected';
+        data.samBalance += r.cost;
+        data.samLedger.push({date: todayStr(), delta: r.cost, reason: `Возврат: ${r.itemName}`});
+        saveData(); renderRewards();
+      }
+    });
+    el.querySelectorAll('[data-del-shop]').forEach(b=>b.onclick=()=>{
+      data.shopItems = data.shopItems.filter(i=>i.id!==b.dataset.delShop);
+      saveData(); renderRewards();
+    });
+    el.querySelectorAll('[data-edit-shop]').forEach(b=>b.onclick=()=>{
+      editingShopItemId = b.dataset.editShop;
+      renderRewards();
+    });
+    const esSave = document.getElementById('es-save');
+    if(esSave) esSave.onclick = ()=>{
+      const item = data.shopItems.find(i=>i.id===esSave.dataset.shopId);
+      if(item){
+        item.name = document.getElementById('es-name').value.trim() || item.name;
+        item.cost = parseInt(document.getElementById('es-cost').value) || item.cost;
+        const cap = parseInt(document.getElementById('es-cap').value);
+        item.capPerMonth = isNaN(cap) ? null : cap;
+      }
+      editingShopItemId = null;
+      saveData(); renderRewards();
+    };
+    const esCancel = document.getElementById('es-cancel');
+    if(esCancel) esCancel.onclick = ()=>{ editingShopItemId = null; renderRewards(); };
+    const shopAddBtn = document.getElementById('shop-add');
+    if(shopAddBtn) shopAddBtn.onclick = ()=>{
+      const name = document.getElementById('shop-name').value.trim();
+      const cost = parseInt(document.getElementById('shop-cost').value);
+      const cap = parseInt(document.getElementById('shop-cap').value) || null;
+      if(!name || !cost){ alert('Укажи название и цену в Sam'); return; }
+      data.shopItems.push({id:uid(), name, cost, capPerMonth:cap});
+      saveData(); renderRewards();
+    };
+  }
+  el.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{
+    const item = data.shopItems.find(i=>i.id===b.dataset.buy);
+    if(!item || data.samBalance < item.cost) return;
+    if(!confirm(`Потратить ${item.cost} Sam на «${item.name}»? Родитель должен будет подтвердить выдачу.`)) return;
+    data.samBalance -= item.cost;
+    data.samLedger.push({date: todayStr(), delta: -item.cost, reason: `Покупка: ${item.name}`});
+    data.redemptions.push({id:uid(), itemId:item.id, itemName:item.name, cost:item.cost, date: todayStr(), status:'pending'});
+    saveData(); renderRewards();
+    alert('Запрос отправлен — жди, когда родитель выдаст награду.');
+  });
 
   el.querySelectorAll('.chest-box').forEach(box=>{
     if(box.dataset.real!=='true' && !parentUnlocked) return; // locked + not parent = not clickable at all
@@ -1799,8 +1991,11 @@ function renderRewards(){
         box.classList.add('opened-anim');
         const key = box.dataset.chest;
         const isReal = box.dataset.real==='true';
+        const samAmount = parseInt(box.dataset.sam)||0;
         if(isReal && !data.rewardsOpened[key]){
           data.rewardsOpened[key] = true;
+          data.samBalance += samAmount;
+          data.samLedger.push({date: todayStr(), delta: samAmount, reason: `Награда: ${box.dataset.reward}`});
           saveData();
           if(!box.querySelector('.chest-collected')){
             box.insertAdjacentHTML('beforeend', '<div class="chest-collected">✓ Открыт</div>');
@@ -1808,8 +2003,10 @@ function renderRewards(){
         }
         setTimeout(()=>{
           const reveal = document.getElementById('chest-reveal');
-          reveal.innerHTML = `<div class="reward-banner"><div class="reward-banner-icon">🏆</div><div class="reward-banner-text">${box.dataset.reward}</div>${!isReal?'<div style="font-size:11px; margin-top:8px; opacity:.7;">(предпросмотр, ещё не открыто по-настоящему)</div>':''}</div>`;
+          reveal.innerHTML = `<div class="reward-banner"><div class="reward-banner-icon">🏆</div><div class="reward-banner-text">${box.dataset.reward}</div><div class="reward-banner-sam">+${samAmount} Sam</div>${!isReal?'<div style="font-size:11px; margin-top:8px; opacity:.7;">(предпросмотр, ещё не открыто по-настоящему)</div>':''}</div>`;
           requestAnimationFrame(()=> reveal.querySelector('.reward-banner').classList.add('pop-in'));
+          const balEl = document.getElementById('sam-balance-num');
+          if(isReal && balEl) balEl.textContent = data.samBalance;
         }, 450);
       }, 480);
     });
@@ -1822,11 +2019,15 @@ function renderRewards(){
         const box = btn.closest('.chest-box');
         const period = box.dataset.period, threshold = parseInt(box.dataset.threshold);
         const current = box.dataset.reward;
-        const next = prompt('Текст награды за ' + threshold + ' очков:', current);
+        const currentSam = box.dataset.sam;
+        const next = prompt('Название награды за ' + threshold + ' очков:', current);
         if(next===null || next.trim()==='') return;
+        const nextSam = prompt('Сколько Sam давать за этот сундук?', currentSam);
+        if(nextSam===null) return;
+        const samVal = parseInt(nextSam);
         const list = period==='monthly' ? data.milestones.monthly : data.milestones.yearly;
         const m = list.find(m=>m.threshold===threshold);
-        if(m){ m.reward = next.trim(); saveData(); renderRewards(); }
+        if(m){ m.reward = next.trim(); if(!isNaN(samVal)) m.samAmount = samVal; saveData(); renderRewards(); }
       };
     });
   }
@@ -1883,7 +2084,43 @@ function renderSettings(){
       <p class="muted">Обнуляет только зелёную полоску прогресса у всех навыков до следующего уровня — сами рейтинги не трогает. Нужно, если после старого теста где-то висит "лишний" XP.</p>
       <button class="ghost" id="reset-xp">Обнулить XP всех навыков</button>
     </div>
+    <div class="card">
+      <h2>Ручное восстановление стрика/очков</h2>
+      <p class="muted">На случай сбоя синхронизации — если стрик или бонусные очки за неделю пропали, можно вернуть их вручную.</p>
+      <div class="row">
+        <div class="field"><label class="f">Текущий стрик (недель подряд)</label><input type="number" min="0" id="s-streak" value="${data.habit.perfectWeeks}"></div>
+        <button class="primary" id="s-streak-save" style="align-self:flex-end;">Сохранить стрик</button>
+      </div>
+      <div class="row">
+        <input id="s-bonus-points" type="number" placeholder="Сколько очков вернуть" style="max-width:180px;">
+        <input id="s-bonus-reason" placeholder="Причина (например: возврат за неделю 2)" style="flex:2;">
+        <button class="primary" id="s-bonus-add">Начислить очки</button>
+      </div>
+      <div class="row">
+        <input id="s-sam-amount" type="number" placeholder="Сколько Sam вернуть" style="max-width:150px;">
+        <button class="primary" id="s-sam-add">Начислить Sam</button>
+      </div>
+    </div>
   `;
+
+  document.getElementById('s-streak-save').onclick = ()=>{
+    const v = parseInt(document.getElementById('s-streak').value);
+    if(!isNaN(v) && v>=0){ data.habit.perfectWeeks = v; saveData(); alert('Стрик обновлён.'); }
+  };
+  document.getElementById('s-bonus-add').onclick = ()=>{
+    const pts = parseInt(document.getElementById('s-bonus-points').value);
+    const reason = document.getElementById('s-bonus-reason').value.trim() || 'Ручное восстановление';
+    if(!pts){ alert('Укажи количество очков'); return; }
+    data.bonusLedger.push({date: todayStr(), points: pts, reason});
+    saveData(); alert(`Начислено ${pts} очков.`);
+  };
+  document.getElementById('s-sam-add').onclick = ()=>{
+    const amt = parseInt(document.getElementById('s-sam-amount').value);
+    if(!amt){ alert('Укажи количество Sam'); return; }
+    data.samBalance += amt;
+    data.samLedger.push({date: todayStr(), delta: amt, reason: 'Ручное восстановление'});
+    saveData(); alert(`Начислено ${amt} Sam.`);
+  };
 
   document.getElementById('s-save-pin').onclick = ()=>{
     const v = document.getElementById('s-pin').value.trim();
