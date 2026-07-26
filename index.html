@@ -352,6 +352,13 @@ function icon(key, size=16){
   if(!p) return '';
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="vertical-align:-3px; display:inline-block;">${p}</svg>`;
 }
+function samIcon(size=18){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="vertical-align:-4px; display:inline-block;">
+    <circle cx="12" cy="12" r="10" fill="#FFD766" stroke="#8a5a00" stroke-width="1.3"/>
+    <circle cx="12" cy="12" r="7.2" fill="none" stroke="#8a5a00" stroke-width="1"/>
+    <text x="12" y="16.2" text-anchor="middle" font-family="Oswald, sans-serif" font-weight="800" font-size="11" fill="#8a5a00">S</text>
+  </svg>`;
+}
 
 const ATTR_DEFS = {
   skating:    { label:'Катание',            emoji:'⚡' },
@@ -441,6 +448,7 @@ function defaultData(){
     parentPin: DEFAULT_PARENT_PIN,
     bonusLedger: [],
     rewardsOpened: {}, // { 'monthly-2026-07-70': true, 'yearly-2026-1200': true, ... } — purely cosmetic "collected" badge
+    pausedWeeks: {}, // { 'YYYY-MM-DD' (Monday): true } — that week is neutral for the streak: doesn't break it, doesn't advance it
     samBalance: 0,
     samLedger: [], // {date, delta, reason} — full history of Sam earned/spent/refunded
     shopItems: [
@@ -597,6 +605,11 @@ function settleWeeks(){
   let changed = false;
   while(cursor < thisMonday){
     changed = true;
+    if(data.pausedWeeks && data.pausedWeeks[cursor]){
+      // parent explicitly paused this week — neutral, streak carries through untouched
+      cursor = addDays(cursor, 7);
+      continue;
+    }
     const weekDates = Array.from({length:7}, (_,i)=>addDays(cursor, i));
     let perfect = true;
     weekDates.forEach(d=>{
@@ -739,7 +752,13 @@ function renderPlayer(){
           <div class="gg-line"><span>Задания сегодня</span><b>${todayDone}/${todayTasks.length||0}</b></div>
           <div class="bar-bg" style="margin-top:4px;"><div class="bar-fill" style="width:${todayTasks.length?todayDone/todayTasks.length*100:0}%"></div></div>
           <div class="gg-line" style="margin-top:10px;"><span>🔥 Недель без пропусков</span><b>${data.habit.perfectWeeks}</b></div>
-          <div class="gg-line" style="margin-top:10px;"><span>🪙 Sam на счету</span><b>${data.samBalance}</b></div>
+        </div>
+        <div class="gg-box" style="text-align:center;">
+          <div class="gg-box-title">Заработано Sam</div>
+          <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+            ${samIcon(30)}
+            <span style="font-family:'Oswald',sans-serif; font-weight:800; font-size:26px; color:var(--gold);">${data.samBalance}</span>
+          </div>
         </div>
       </div>
 
@@ -1592,6 +1611,11 @@ function renderTasks(){
         </div>
       </div>
       <div class="muted" style="font-size:11px; margin-bottom:8px;">Сегодня: ${DAY_LABELS[weekdayIndex(todayStr())]}, ${todayStr()}</div>
+      ${parentUnlocked ? `
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:10px; cursor:pointer;">
+        <input type="checkbox" id="week-pause" ${data.pausedWeeks[viewedMonday]?'checked':''} style="width:auto; flex:none;">
+        Приостановить стрик на этой неделе (не засчитывается и не обнуляет — со следующей недели продолжится как ни в чём не бывало)
+      </label>` : ''}
       <div class="chart-wrap"><table class="week-table" id="week-grid"></table></div>
     </div>
 
@@ -1725,6 +1749,12 @@ function renderTasks(){
 
   document.getElementById('week-prev').onclick = ()=>{ tasksWeekOffset--; editingTaskId=null; renderTasks(); };
   document.getElementById('week-next').onclick = ()=>{ if(tasksWeekOffset<1) tasksWeekOffset++; editingTaskId=null; renderTasks(); };
+  const weekPauseCb = document.getElementById('week-pause');
+  if(weekPauseCb) weekPauseCb.onchange = ()=>{
+    if(weekPauseCb.checked) data.pausedWeeks[viewedMonday] = true;
+    else delete data.pausedWeeks[viewedMonday];
+    saveData();
+  };
 
   // week grid — always visible; source is whatever was explicitly set for the viewed week
   const grid = document.getElementById('week-grid');
@@ -1831,7 +1861,7 @@ function renderRewards(){
         <div class="chest-progress">${Math.min(c.progress,c.threshold)}/${c.threshold}</div>
         ${c.opened?'<div class="chest-collected">✓ Открыт</div>':(c.unlocked?'<div class="chest-collected" style="color:var(--gold);">Жми!</div>':(parentUnlocked?'<div class="chest-collected" style="color:var(--electric);">Просмотр</div>':''))}
         ${parentUnlocked?`<button class="icon-btn" data-edit-reward="${c.key}" style="position:absolute; top:2px; right:2px; z-index:2;">✎</button>`:''}
-        ${!clickable?'':''}
+        ${parentUnlocked && c.opened ? `<button class="icon-btn" data-close-chest="${c.key}" data-sam-amt="${c.samAmount||0}" title="Закрыть обратно" style="position:absolute; top:2px; left:2px; z-index:2;">↺</button>` : ''}
       </div>`;
   }
 
@@ -1843,7 +1873,7 @@ function renderRewards(){
 
   el.innerHTML = `
     <div class="sam-wallet">
-      <div class="sam-wallet-icon">🪙</div>
+      <div class="sam-wallet-icon">${samIcon(30)}</div>
       <div>
         <div class="sam-wallet-num" id="sam-balance-num">${data.samBalance}</div>
         <div class="sam-wallet-lbl">Sam на счету</div>
@@ -1984,7 +2014,7 @@ function renderRewards(){
     if(box.dataset.real!=='true' && !parentUnlocked) return; // locked + not parent = not clickable at all
     box.style.cursor = 'pointer';
     box.addEventListener('click', (e)=>{
-      if(e.target.closest('[data-edit-reward]')) return; // don't trigger open when clicking the edit pencil
+      if(e.target.closest('[data-edit-reward]') || e.target.closest('[data-close-chest]')) return; // don't trigger open when clicking a control button
       box.classList.add('shaking');
       setTimeout(()=>{
         box.classList.remove('shaking');
@@ -2028,6 +2058,18 @@ function renderRewards(){
         const list = period==='monthly' ? data.milestones.monthly : data.milestones.yearly;
         const m = list.find(m=>m.threshold===threshold);
         if(m){ m.reward = next.trim(); if(!isNaN(samVal)) m.samAmount = samVal; saveData(); renderRewards(); }
+      };
+    });
+    el.querySelectorAll('[data-close-chest]').forEach(btn=>{
+      btn.onclick = (e)=>{
+        e.stopPropagation();
+        const key = btn.dataset.closeChest;
+        const samAmt = parseInt(btn.dataset.samAmt)||0;
+        if(!confirm('Закрыть сундук обратно? Начисленные ' + samAmt + ' Sam спишутся, и Самир сможет открыть его сам, по-настоящему.')) return;
+        delete data.rewardsOpened[key];
+        data.samBalance -= samAmt;
+        data.samLedger.push({date: todayStr(), delta: -samAmt, reason: `Отмена открытия сундука (${key})`});
+        saveData(); renderRewards();
       };
     });
   }
