@@ -429,6 +429,7 @@ function defaultData(){
       {id:'t5', name:'Дриблинг с клюшкой дома', points:1, attr:'dribbling', skillXp:1, days:[2,4], confirmRequired:false},
     ],
     weeklyPrograms: {}, // { 'YYYY-MM-DD' (Monday) : [task, task, ...] } — each week is independent, nothing carries over automatically
+    taskLibrary: [], // reusable task templates, built up automatically as tasks get added to any week — never auto-applied to a week, only picked from manually
     taskLog: {},
     milestones: {
       monthly: RECOMMENDED_MILESTONES.monthly.map((m,i)=>({id:'mm'+i, ...m})),
@@ -1642,6 +1643,11 @@ function renderTasks(){
       </label>
       <button class="primary" id="add-task">Добавить задание</button>
       <ul class="list" id="task-list" style="margin-top:10px;"></ul>
+    </div>
+    <div class="card">
+      <h2>Библиотека заданий</h2>
+      <p class="muted">Всё, что ты когда-либо добавлял, сохраняется здесь — можно добавить в текущую или следующую неделю одним нажатием, вместо того чтобы писать заново.</p>
+      <ul class="list" id="task-library-list"></ul>
     </div>` : ''}
   `;
 
@@ -1686,7 +1692,12 @@ function renderTasks(){
       const skillXp = parseFloat(document.getElementById('task-skillxp').value);
       const confirmRequired = document.getElementById('task-confirm').checked;
       if(!name || selectedDays.size===0){ alert('Укажи название и хотя бы один день недели'); return; }
-      program.push({id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired});
+      const newTask = {id:uid(), name, points, attr, skillXp: isNaN(skillXp)?1:skillXp, days:[...selectedDays], confirmRequired};
+      program.push(newTask);
+      // keep a reusable copy in the library, matched by name — updates it if it already exists
+      const libMatch = data.taskLibrary.find(t=>t.name.trim().toLowerCase()===name.toLowerCase());
+      if(libMatch){ libMatch.points=points; libMatch.attr=attr; libMatch.skillXp=newTask.skillXp; libMatch.days=[...selectedDays]; libMatch.confirmRequired=confirmRequired; }
+      else { data.taskLibrary.push({id:uid(), name, points, attr, skillXp:newTask.skillXp, days:[...selectedDays], confirmRequired}); }
       saveData(); renderTasks();
     };
 
@@ -1743,6 +1754,40 @@ function renderTasks(){
     taskList.querySelectorAll('[data-edit-task]').forEach(b=>b.onclick=()=>{ editingTaskId = b.dataset.editTask; renderTasks(); });
     taskList.querySelectorAll('[data-del-task]').forEach(b=>b.onclick=()=>{
       data.weeklyPrograms[viewedMonday] = program.filter(t=>t.id!==b.dataset.delTask);
+      saveData(); renderTasks();
+    });
+
+    const libList = document.getElementById('task-library-list');
+    if(data.taskLibrary.length===0){ libList.innerHTML = '<li class="empty">Пока пусто — появится само, как только добавишь первое задание выше</li>'; }
+    data.taskLibrary.forEach(t=>{
+      const li=document.createElement('li');
+      const attrPill = t.attr ? `<span class="pill">${icon(t.attr)} ${ATTR_DEFS[t.attr].label}</span>` : '';
+      li.innerHTML = `<span>${t.name} <span class="pill">${t.points} б.</span> ${attrPill} <span class="pill">${t.days.map(d=>DAY_LABELS[d]).join(' ')}</span></span>
+        <span><button class="ghost" data-add-from-lib="${t.id}">➕ В неделю</button>
+        <button class="icon-btn" data-edit-lib="${t.id}">✎</button>
+        <button class="icon-btn" data-del-lib="${t.id}">✕</button></span>`;
+      libList.appendChild(li);
+    });
+    libList.querySelectorAll('[data-add-from-lib]').forEach(b=>b.onclick=()=>{
+      const t = data.taskLibrary.find(t=>t.id===b.dataset.addFromLib);
+      if(!t) return;
+      if(!data.weeklyPrograms[viewedMonday]) data.weeklyPrograms[viewedMonday] = [];
+      data.weeklyPrograms[viewedMonday].push({id:uid(), name:t.name, points:t.points, attr:t.attr, skillXp:t.skillXp, days:[...t.days], confirmRequired:t.confirmRequired});
+      saveData(); renderTasks();
+    });
+    libList.querySelectorAll('[data-edit-lib]').forEach(b=>b.onclick=()=>{
+      const t = data.taskLibrary.find(t=>t.id===b.dataset.editLib);
+      if(!t) return;
+      const name = prompt('Название:', t.name);
+      if(name===null || !name.trim()) return;
+      const pts = prompt('Баллы:', t.points);
+      if(pts===null) return;
+      t.name = name.trim();
+      t.points = parseInt(pts)||t.points;
+      saveData(); renderTasks();
+    });
+    libList.querySelectorAll('[data-del-lib]').forEach(b=>b.onclick=()=>{
+      data.taskLibrary = data.taskLibrary.filter(t=>t.id!==b.dataset.delLib);
       saveData(); renderTasks();
     });
   }
