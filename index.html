@@ -452,6 +452,8 @@ function defaultData(){
     pausedWeeks: {}, // { 'YYYY-MM-DD' (Monday): true } — that week is neutral for the streak: doesn't break it, doesn't advance it
     samBalance: 0,
     samLedger: [], // {date, delta, reason} — full history of Sam earned/spent/refunded
+    lastSettledMonth: null, // 'YYYY-MM' — tracks month-end settlement (excess/shortfall Sam payout)
+    lastSettledYear: null,  // 'YYYY' — same idea, yearly
     shopItems: [
       {id:'sh1', name:'+30 минут телефона', cost:1, capPerMonth:null},
       {id:'sh2', name:'Пельмени', cost:3, capPerMonth:2},
@@ -540,6 +542,7 @@ function initLiveSync(){
           data.fixedMissingSamAmounts = true;
         }
         if(settleWeeks()) saveData();
+        if(settlePeriods()) saveData();
         renderAll();
         resolve();
       } else {
@@ -629,6 +632,78 @@ function settleWeeks(){
     cursor = addDays(cursor, 7);
   }
   h.lastSettledWeekMonday = thisMonday;
+  return changed;
+}
+
+const EXCESS_SAM_RATE = 5; // points per 1 Sam, above the top tier — matches the Platinum→Supernova marginal rate
+
+function totalPointsForPeriod(prefix){
+  let total = 0;
+  Object.entries(data.taskLog).forEach(([date, entries])=>{
+    if(date.startsWith(prefix)) total += Object.values(entries).filter(e=>e.status==='done').reduce((s,e)=>s+e.points,0);
+  });
+  data.bonusLedger.forEach(b=>{ if(b.date.startsWith(prefix)) total += b.points; });
+  return total;
+}
+
+// Runs once when a month/year has actually ended. Auto-collects any real chest that was
+// unlocked but never manually opened (so nothing is lost just because it wasn't clicked),
+// then converts whatever's left over past the last tier into Sam — either excess above the
+// top threshold, or proportional credit for how close he got to the next one he missed.
+function settlePeriod(periodKey, milestoneList, periodType){
+  const total = totalPointsForPeriod(periodKey);
+  const sorted = milestoneList.slice().sort((a,b)=>a.threshold-b.threshold);
+  if(sorted.length===0) return;
+  sorted.forEach(m=>{
+    const key = `${periodType}-${periodKey}-${m.threshold}`;
+    if(total >= m.threshold && !data.rewardsOpened[key]){
+      data.rewardsOpened[key] = true;
+      data.samBalance += (m.samAmount||0);
+      data.samLedger.push({date: todayStr(), delta:(m.samAmount||0), reason:`Автосбор (не открыл сам): ${m.reward}, ${periodKey}`});
+    }
+  });
+  const topThreshold = sorted[sorted.length-1].threshold;
+  if(total > topThreshold){
+    const excess = total - topThreshold;
+    const bonusSam = Math.round(excess/EXCESS_SAM_RATE);
+    if(bonusSam>0){
+      data.samBalance += bonusSam;
+      data.samLedger.push({date: todayStr(), delta:bonusSam, reason:`Итог ${periodKey}: +${excess} очков сверх потолка`});
+    }
+  } else {
+    let prev = 0;
+    for(const m of sorted){
+      if(total < m.threshold){
+        const progress = Math.max(0, total-prev);
+        const range = m.threshold-prev;
+        const partialSam = Math.round((m.samAmount||0)*progress/range);
+        if(partialSam>0){
+          data.samBalance += partialSam;
+          data.samLedger.push({date: todayStr(), delta:partialSam, reason:`Итог ${periodKey}: не хватило ${m.threshold-total} очков до «${m.reward}»`});
+        }
+        break;
+      }
+      prev = m.threshold;
+    }
+  }
+}
+
+function settlePeriods(){
+  let changed = false;
+  const curMonthKey = todayStr().slice(0,7);
+  const curYear = todayStr().slice(0,4);
+  if(!data.lastSettledMonth){ data.lastSettledMonth = curMonthKey; }
+  else if(data.lastSettledMonth !== curMonthKey){
+    settlePeriod(data.lastSettledMonth, data.milestones.monthly, 'monthly');
+    data.lastSettledMonth = curMonthKey;
+    changed = true;
+  }
+  if(!data.lastSettledYear){ data.lastSettledYear = curYear; }
+  else if(data.lastSettledYear !== curYear){
+    settlePeriod(data.lastSettledYear, data.milestones.yearly, 'yearly');
+    data.lastSettledYear = curYear;
+    changed = true;
+  }
   return changed;
 }
 
