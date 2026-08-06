@@ -501,7 +501,7 @@ function uid(){ return Math.random().toString(36).slice(2,10); }
 let isFirstSnapshot = true;
 function initLiveSync(){
   return new Promise((resolve)=>{
-    onSnapshot(appDocRef, (snap)=>{
+    onSnapshot(appDocRef, async (snap)=>{
       if(snap.metadata.hasPendingWrites) return; // echo of our own not-yet-confirmed write — nothing new to apply
 
       if(snap.metadata.fromCache && isFirstSnapshot){
@@ -541,8 +541,18 @@ function initLiveSync(){
           fillSam(data.milestones.yearly, RECOMMENDED_MILESTONES.yearly);
           data.fixedMissingSamAmounts = true;
         }
-        if(settleWeeks()) saveData();
-        if(settlePeriods()) saveData();
+        // Re-fetch directly from the server right before any autonomous write — settleWeeks/
+        // settlePeriods run without the user asking, so this is the highest-risk moment for
+        // silently clobbering a purchase or checkmark the other phone just wrote a moment ago.
+        try{
+          const freshSnap = await getDoc(appDocRef);
+          if(freshSnap.exists() && freshSnap.data().json){
+            data = Object.assign(defaultData(), JSON.parse(freshSnap.data().json));
+          }
+        }catch(e){ console.error('pre-settlement refetch failed', e); }
+        const weeksChanged = settleWeeks();
+        const periodsChanged = settlePeriods();
+        if(weeksChanged || periodsChanged) saveData();
         renderAll();
         resolve();
       } else {
