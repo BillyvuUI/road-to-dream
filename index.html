@@ -486,36 +486,40 @@ function requireParentUnlock(){
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
 // Live sync: instead of reading once at page load, we keep a standing connection.
-// Any change from either phone arrives here within roughly a second, so the in-memory
-// `data` never goes stale long enough for a save from the other device to erase it.
+// Any change from either phone arrives here within roughly a second.
 //
-// IMPORTANT: with persistentLocalCache enabled, the FIRST snapshot after opening the app
-// is very often served straight from the on-disk cache (snap.metadata.fromCache === true)
-// before the real server round-trip completes — this is especially likely after the app
-// has been closed for days. That cached copy can be stale (missing whatever the other
-// phone wrote while this device was closed). We must never let a stale cached snapshot
-// drive settleWeeks()/migrations/saveData() — that was the exact bug that silently
-// overwrote a correct week of streak data with a week-old local copy. We show the cached
-// data immediately (so the UI isn't blank), but only run the mutating logic once we get
-// a snapshot confirmed to be from the server.
+// THE REAL FIX: every write carries a timestamp (updatedAt). We track the newest
+// timestamp we've locally applied (localDataUpdatedAt) and NEVER let an incoming
+// snapshot overwrite our in-memory `data` if its timestamp is older or equal to
+// what we already have — no matter why it arrived out of order (cache replay,
+// waking from sleep overnight, a race with another device's write, anything).
+// This is a general guard against "old data wins", not a patch for one specific
+// scenario — previous fixes (cache checks, pre-write refetch) were reactive to
+// particular causes; this closes the whole class of bug at once.
 let isFirstSnapshot = true;
+let localDataUpdatedAt = 0;
 function initLiveSync(){
   return new Promise((resolve)=>{
     onSnapshot(appDocRef, async (snap)=>{
       if(snap.metadata.hasPendingWrites) return; // echo of our own not-yet-confirmed write — nothing new to apply
 
-      if(snap.metadata.fromCache && isFirstSnapshot){
-        // Stale-or-unconfirmed local copy — show it for responsiveness only, never settle/save from it.
-        if(snap.exists() && snap.data().json){
-          data = Object.assign(defaultData(), JSON.parse(snap.data().json));
-          renderAll();
-        }
+      const incomingUpdatedAt = (snap.exists() && snap.data().updatedAt) || 0;
+      if(incomingUpdatedAt < localDataUpdatedAt){
+        // Strictly older than what we already have locally — reject outright, no matter why it arrived out of order.
         return;
       }
 
       if(snap.exists() && snap.data().json){
         data = Object.assign(defaultData(), JSON.parse(snap.data().json));
+        localDataUpdatedAt = incomingUpdatedAt;
       }
+
+      if(snap.metadata.fromCache && isFirstSnapshot){
+        // Unconfirmed local copy — show it for responsiveness only, never settle/save from it.
+        renderAll();
+        return;
+      }
+
       if(isFirstSnapshot){
         isFirstSnapshot = false;
         if(!data.weeklyPrograms || Object.keys(data.weeklyPrograms).length===0){
@@ -541,15 +545,6 @@ function initLiveSync(){
           fillSam(data.milestones.yearly, RECOMMENDED_MILESTONES.yearly);
           data.fixedMissingSamAmounts = true;
         }
-        // Re-fetch directly from the server right before any autonomous write — settleWeeks/
-        // settlePeriods run without the user asking, so this is the highest-risk moment for
-        // silently clobbering a purchase or checkmark the other phone just wrote a moment ago.
-        try{
-          const freshSnap = await getDoc(appDocRef);
-          if(freshSnap.exists() && freshSnap.data().json){
-            data = Object.assign(defaultData(), JSON.parse(freshSnap.data().json));
-          }
-        }catch(e){ console.error('pre-settlement refetch failed', e); }
         const weeksChanged = settleWeeks();
         const periodsChanged = settlePeriods();
         if(weeksChanged || periodsChanged) saveData();
@@ -571,7 +566,9 @@ async function loadData(){
 let saveTimer=null;
 async function saveData(){
   try{
-    await setDoc(appDocRef, { json: JSON.stringify(data), updatedAt: Date.now() });
+    const ts = Date.now();
+    await setDoc(appDocRef, { json: JSON.stringify(data), updatedAt: ts });
+    localDataUpdatedAt = ts; // our own confirmed write is now the newest known state — nothing older may override it
     const bar=document.getElementById('savebar');
     bar.classList.add('show');
     clearTimeout(saveTimer);
