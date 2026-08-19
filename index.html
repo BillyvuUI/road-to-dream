@@ -298,7 +298,7 @@
 <script type="module">
 // ================= FIREBASE / FIRESTORE STORAGE =================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, getDoc, setDoc, updateDoc, deleteField, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBp69nrVyCgl70Wh3kj6roWVPAdm0XlShk",
@@ -511,6 +511,7 @@ function initLiveSync(){
 
       if(snap.exists() && snap.data().json){
         data = Object.assign(defaultData(), JSON.parse(snap.data().json));
+        if(snap.data().taskLog !== undefined) data.taskLog = snap.data().taskLog; // taskLog now lives in its own field — see saveTaskLogField
         localDataUpdatedAt = incomingUpdatedAt;
       }
 
@@ -545,6 +546,14 @@ function initLiveSync(){
           fillSam(data.milestones.yearly, RECOMMENDED_MILESTONES.yearly);
           data.fixedMissingSamAmounts = true;
         }
+        if(!data.migratedTaskLogField){
+          // one-time: move taskLog out of the shared json blob into its own top-level Firestore
+          // field, so individual checkbox toggles can be written with a targeted merge instead
+          // of overwriting the whole document — this is the actual fix for two phones racing
+          // to save at nearly the same time and one clobbering the other's checkmark.
+          try{ await setDoc(appDocRef, { taskLog: data.taskLog || {} }, { merge: true }); }catch(e){ console.error('taskLog migration failed', e); }
+          data.migratedTaskLogField = true;
+        }
         const weeksChanged = settleWeeks();
         const periodsChanged = settlePeriods();
         if(weeksChanged || periodsChanged) saveData();
@@ -564,18 +573,38 @@ async function loadData(){
   await initLiveSync();
 }
 let saveTimer=null;
+function showSaveBar(){
+  const bar=document.getElementById('savebar');
+  bar.classList.add('show');
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>bar.classList.remove('show'), 900);
+}
 async function saveData(){
   try{
     const ts = Date.now();
-    await setDoc(appDocRef, { json: JSON.stringify(data), updatedAt: ts });
-    localDataUpdatedAt = ts; // our own confirmed write is now the newest known state — nothing older may override it
-    const bar=document.getElementById('savebar');
-    bar.classList.add('show');
-    clearTimeout(saveTimer);
-    saveTimer=setTimeout(()=>bar.classList.remove('show'), 900);
+    const {taskLog, ...rest} = data; // taskLog lives in its own field now — never overwrite it from here
+    await setDoc(appDocRef, { json: JSON.stringify(rest), updatedAt: ts }, { merge: true });
+    localDataUpdatedAt = ts;
+    showSaveBar();
   }catch(e){ console.error('save failed', e); alert('Не удалось сохранить — проверь интернет-соединение, изменения могут потеряться.'); }
 }
-
+// Targeted write for a single taskLog entry — uses Firestore's own field-path merge so two
+// phones toggling different (or even the same) checkbox at nearly the same moment never wipe
+// out each other's unrelated changes, unlike a full-document overwrite.
+async function saveTaskLogField(dateStr, taskId, value){
+  if(!data.taskLog[dateStr]) data.taskLog[dateStr] = {};
+  if(value===null) delete data.taskLog[dateStr][taskId]; else data.taskLog[dateStr][taskId] = value;
+  try{
+    const ts = Date.now();
+    const path = `taskLog.${dateStr}.${taskId}`;
+    await updateDoc(appDocRef, { [path]: value===null ? deleteField() : value, updatedAt: ts });
+    localDataUpdatedAt = ts;
+    showSaveBar();
+  }catch(e){
+    console.error('taskLog field save failed, falling back to full save', e);
+    saveData();
+  }
+}
 
 // ================= HELPERS =================
 function monthKey(d){ return d.slice(0,7); } // 'YYYY-MM' from 'YYYY-MM-DD'
@@ -1736,15 +1765,17 @@ function renderTasks(){
   if(parentUnlocked){
     document.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>{
       const [date, taskId] = b.dataset.confirm.split('|');
-      data.taskLog[date][taskId].status = 'done';
+      const entry = data.taskLog[date][taskId];
+      entry.status = 'done';
+      saveTaskLogField(date, taskId, entry);
       const task = findTaskById(taskId);
-      if(task && task.attr) applyXp(task.attr, task.skillXp ?? TASK_XP);
-      saveData(); renderTasks(); renderPlayer();
+      if(task && task.attr){ applyXp(task.attr, task.skillXp ?? TASK_XP); saveData(); }
+      renderTasks(); renderPlayer();
     });
     document.querySelectorAll('[data-reject]').forEach(b=>b.onclick=()=>{
       const [date, taskId] = b.dataset.reject.split('|');
-      delete data.taskLog[date][taskId];
-      saveData(); renderTasks();
+      saveTaskLogField(date, taskId, null);
+      renderTasks();
     });
   }
 
@@ -1914,17 +1945,19 @@ function renderTasks(){
     const task = gridTasks.find(t=>t.id===taskId);
     if(!data.taskLog[dateStr]) data.taskLog[dateStr] = {};
     const existing = data.taskLog[dateStr][taskId];
+    let newValue;
     if(existing){
       // undo — allowed for both pending (Samir can cancel his own mark) and done (only meaningful if parent unlocked, but keep simple: anyone can uncheck)
-      if(existing.status==='done' && task.attr) applyXp(task.attr, -(task.skillXp ?? TASK_XP));
-      delete data.taskLog[dateStr][taskId];
+      if(existing.status==='done' && task.attr){ applyXp(task.attr, -(task.skillXp ?? TASK_XP)); saveData(); }
+      newValue = null;
     } else if(task.confirmRequired){
-      data.taskLog[dateStr][taskId] = {status:'pending', points: task.points};
+      newValue = {status:'pending', points: task.points};
     } else {
-      data.taskLog[dateStr][taskId] = {status:'done', points: task.points};
-      if(task.attr) applyXp(task.attr, task.skillXp ?? TASK_XP);
+      newValue = {status:'done', points: task.points};
+      if(task.attr){ applyXp(task.attr, task.skillXp ?? TASK_XP); saveData(); }
     }
-    saveData(); renderTasks(); renderPlayer();
+    saveTaskLogField(dateStr, taskId, newValue);
+    renderTasks(); renderPlayer();
   });
 }
 
