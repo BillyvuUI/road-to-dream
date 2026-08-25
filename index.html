@@ -605,6 +605,21 @@ async function saveTaskLogField(dateStr, taskId, value){
     saveData();
   }
 }
+// Pulls the absolute latest state straight from the server (never cache) right before a
+// high-value, infrequent mutation (games, training log, purchases) — same principle as
+// taskLog's field-level writes, applied here as a pre-write refresh since these fields
+// still live in the shared blob. Shrinks the race window from "however long since last
+// sync" down to one network round-trip.
+async function refreshFromServer(){
+  try{
+    const freshSnap = await getDoc(appDocRef);
+    if(freshSnap.exists() && freshSnap.data().json){
+      data = Object.assign(defaultData(), JSON.parse(freshSnap.data().json));
+      if(freshSnap.data().taskLog !== undefined) data.taskLog = freshSnap.data().taskLog;
+      localDataUpdatedAt = Math.max(localDataUpdatedAt, freshSnap.data().updatedAt || 0);
+    }
+  }catch(e){ console.error('refreshFromServer failed', e); }
+}
 
 // ================= HELPERS =================
 function monthKey(d){ return d.slice(0,7); } // 'YYYY-MM' from 'YYYY-MM-DD'
@@ -1187,11 +1202,12 @@ function renderGame(){
     return agg;
   }
 
-  document.getElementById('save-game').onclick = ()=>{
+  document.getElementById('save-game').onclick = async ()=>{
     const date = document.getElementById('g-date').value || todayStr();
     const opponent = document.getElementById('g-opp').value.trim() || '—';
     const matchType = document.getElementById('g-type').value;
     const missed = document.getElementById('g-missed').checked;
+    await refreshFromServer(); // pull the latest games list before adding to it — closes the race window
 
     if(missed){
       data.games.push({id:uid(), date, opponent, matchType, missed:true, raw:null, xpGained:null, matchRating:null, ovrAfter: ovr(), scoresheet:[]});
@@ -1359,7 +1375,8 @@ function renderMatches(){
   });
 }
 
-function deleteGame(gameId){
+async function deleteGame(gameId){
+  await refreshFromServer();
   const idx = data.games.findIndex(g=>g.id===gameId);
   if(idx===-1) return;
   const g = data.games[idx];
@@ -1557,9 +1574,10 @@ function renderTraining(){
   }
   renderChecklist();
 
-  document.getElementById('save-training').onclick = ()=>{
+  document.getElementById('save-training').onclick = async ()=>{
     const date = parentUnlocked ? (document.getElementById('tr-date').value || todayStr()) : todayStr();
     if(totalMarks()===0){ alert('Отметь хотя бы одно действие.'); return; }
+    await refreshFromServer();
     if(data.trainingLog[date]){
       alert('Эта дата уже внесена. Если это ошибка — удали запись в истории тренировок ниже и внеси заново.');
       return;
@@ -2159,10 +2177,12 @@ function renderRewards(){
       saveData(); renderRewards();
     };
   }
-  el.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{
+  el.querySelectorAll('[data-buy]').forEach(b=>b.onclick=async ()=>{
     const item = data.shopItems.find(i=>i.id===b.dataset.buy);
     if(!item || data.samBalance < item.cost) return;
     if(!confirm(`Потратить ${item.cost} Sam на «${item.name}»? Родитель должен будет подтвердить выдачу.`)) return;
+    await refreshFromServer();
+    if(data.samBalance < item.cost){ alert('Баланс изменился, недостаточно Sam — попробуй ещё раз.'); renderRewards(); return; }
     data.samBalance -= item.cost;
     data.samLedger.push({date: todayStr(), delta: -item.cost, reason: `Покупка: ${item.name}`});
     data.redemptions.push({id:uid(), itemId:item.id, itemName:item.name, cost:item.cost, date: todayStr(), status:'pending'});
