@@ -614,9 +614,11 @@ async function refreshFromServer(){
   try{
     const freshSnap = await getDoc(appDocRef);
     if(freshSnap.exists() && freshSnap.data().json){
+      const incomingUpdatedAt = freshSnap.data().updatedAt || 0;
+      if(incomingUpdatedAt < localDataUpdatedAt) return; // the live listener already applied something newer while this fetch was in flight — never regress
       data = Object.assign(defaultData(), JSON.parse(freshSnap.data().json));
       if(freshSnap.data().taskLog !== undefined) data.taskLog = freshSnap.data().taskLog;
-      localDataUpdatedAt = Math.max(localDataUpdatedAt, freshSnap.data().updatedAt || 0);
+      localDataUpdatedAt = incomingUpdatedAt;
     }
   }catch(e){ console.error('refreshFromServer failed', e); }
 }
@@ -2132,11 +2134,13 @@ function renderRewards(){
   `;
 
   if(parentUnlocked){
-    el.querySelectorAll('[data-fulfill]').forEach(b=>b.onclick=()=>{
+    el.querySelectorAll('[data-fulfill]').forEach(b=>b.onclick=async ()=>{
+      await refreshFromServer();
       const r = data.redemptions.find(r=>r.id===b.dataset.fulfill);
       if(r){ r.status='fulfilled'; saveData(); renderRewards(); }
     });
-    el.querySelectorAll('[data-cancel-redeem]').forEach(b=>b.onclick=()=>{
+    el.querySelectorAll('[data-cancel-redeem]').forEach(b=>b.onclick=async ()=>{
+      await refreshFromServer();
       const r = data.redemptions.find(r=>r.id===b.dataset.cancelRedeem);
       if(r){
         r.status='rejected';
@@ -2196,19 +2200,22 @@ function renderRewards(){
     box.addEventListener('click', (e)=>{
       if(e.target.closest('[data-edit-reward]') || e.target.closest('[data-close-chest]')) return; // don't trigger open when clicking a control button
       box.classList.add('shaking');
-      setTimeout(()=>{
+      setTimeout(async ()=>{
         box.classList.remove('shaking');
         box.classList.add('opened-anim');
         const key = box.dataset.chest;
         const isReal = box.dataset.real==='true';
         const samAmount = parseInt(box.dataset.sam)||0;
-        if(isReal && !data.rewardsOpened[key]){
-          data.rewardsOpened[key] = true;
-          data.samBalance += samAmount;
-          data.samLedger.push({date: todayStr(), delta: samAmount, reason: `Награда: ${box.dataset.reward}`});
-          saveData();
-          if(!box.querySelector('.chest-collected')){
-            box.insertAdjacentHTML('beforeend', '<div class="chest-collected">✓ Открыт</div>');
+        if(isReal){
+          await refreshFromServer();
+          if(!data.rewardsOpened[key]){
+            data.rewardsOpened[key] = true;
+            data.samBalance += samAmount;
+            data.samLedger.push({date: todayStr(), delta: samAmount, reason: `Награда: ${box.dataset.reward}`});
+            saveData();
+            if(!box.querySelector('.chest-collected')){
+              box.insertAdjacentHTML('beforeend', '<div class="chest-collected">✓ Открыт</div>');
+            }
           }
         }
         setTimeout(()=>{
@@ -2224,7 +2231,7 @@ function renderRewards(){
 
   if(parentUnlocked){
     el.querySelectorAll('[data-edit-reward]').forEach(btn=>{
-      btn.onclick = (e)=>{
+      btn.onclick = async (e)=>{
         e.stopPropagation();
         const box = btn.closest('.chest-box');
         const period = box.dataset.period, threshold = parseInt(box.dataset.threshold);
@@ -2235,17 +2242,19 @@ function renderRewards(){
         const nextSam = prompt('Сколько Sam давать за этот сундук?', currentSam);
         if(nextSam===null) return;
         const samVal = parseInt(nextSam);
+        await refreshFromServer();
         const list = period==='monthly' ? data.milestones.monthly : data.milestones.yearly;
         const m = list.find(m=>m.threshold===threshold);
         if(m){ m.reward = next.trim(); if(!isNaN(samVal)) m.samAmount = samVal; saveData(); renderRewards(); }
       };
     });
     el.querySelectorAll('[data-close-chest]').forEach(btn=>{
-      btn.onclick = (e)=>{
+      btn.onclick = async (e)=>{
         e.stopPropagation();
         const key = btn.dataset.closeChest;
         const samAmt = parseInt(btn.dataset.samAmt)||0;
         if(!confirm('Закрыть сундук обратно? Начисленные ' + samAmt + ' Sam спишутся, и Самир сможет открыть его сам, по-настоящему.')) return;
+        await refreshFromServer();
         delete data.rewardsOpened[key];
         data.samBalance -= samAmt;
         data.samLedger.push({date: todayStr(), delta: -samAmt, reason: `Отмена открытия сундука (${key})`});
@@ -2325,20 +2334,22 @@ function renderSettings(){
     </div>
   `;
 
-  document.getElementById('s-streak-save').onclick = ()=>{
+  document.getElementById('s-streak-save').onclick = async ()=>{
     const v = parseInt(document.getElementById('s-streak').value);
-    if(!isNaN(v) && v>=0){ data.habit.perfectWeeks = v; saveData(); alert('Стрик обновлён.'); }
+    if(!isNaN(v) && v>=0){ await refreshFromServer(); data.habit.perfectWeeks = v; saveData(); alert('Стрик обновлён.'); }
   };
-  document.getElementById('s-bonus-add').onclick = ()=>{
+  document.getElementById('s-bonus-add').onclick = async ()=>{
     const pts = parseInt(document.getElementById('s-bonus-points').value);
     const reason = document.getElementById('s-bonus-reason').value.trim() || 'Ручное восстановление';
     if(!pts){ alert('Укажи количество очков'); return; }
+    await refreshFromServer();
     data.bonusLedger.push({date: todayStr(), points: pts, reason});
     saveData(); alert(`Начислено ${pts} очков.`);
   };
-  document.getElementById('s-sam-add').onclick = ()=>{
+  document.getElementById('s-sam-add').onclick = async ()=>{
     const amt = parseInt(document.getElementById('s-sam-amount').value);
     if(!amt){ alert('Укажи количество Sam'); return; }
+    await refreshFromServer();
     data.samBalance += amt;
     data.samLedger.push({date: todayStr(), delta: amt, reason: 'Ручное восстановление'});
     saveData(); alert(`Начислено ${amt} Sam.`);
