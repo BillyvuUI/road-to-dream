@@ -298,13 +298,14 @@
   <div style="max-width:420px; background:var(--panel); border:1px solid rgba(0,212,255,.25); border-radius:14px; padding:20px; box-shadow:0 12px 36px rgba(0,0,0,.45);">
     <div style="font-family:'Oswald',sans-serif; font-size:18px; color:var(--gold); margin-bottom:8px;">СИНХРОНИЗАЦИЯ</div>
     <div id="sync-overlay-text" class="muted" style="font-size:13px; line-height:1.45;">Получаю актуальные данные из Firebase…</div>
+    <div style="margin-top:8px;font-size:10px;opacity:.45;letter-spacing:.08em">SYNC V3 · 03.09.2026</div>
   </div>
 </div>
 
 <script type="module">
 // ================= FIREBASE / FIRESTORE STORAGE =================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager, doc, getDocFromServer, setDoc, updateDoc, deleteField, onSnapshot, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { getFirestore, doc, getDocFromServer, setDoc, updateDoc, deleteField, onSnapshot, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBp69nrVyCgl70Wh3kj6roWVPAdm0XlShk",
@@ -315,10 +316,14 @@ const firebaseConfig = {
   appId: "1:1001601715328:web:bf56d143798063cea1ea65",
 };
 const fbApp = initializeApp(firebaseConfig);
-const db = initializeFirestore(fbApp, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
-});
-const appDocRef = doc(db, 'appdata', 'samir');
+const db = getFirestore(fbApp);
+// V3 deliberately uses a NEW Firestore document. Old installed builds still point at appdata/samir,
+// so even if one of them wakes up with stale state it cannot overwrite the V3 canonical data.
+const LEGACY_DOC_ID = 'samir';
+const V3_DOC_ID = 'samir_v3_20260903';
+const legacyAppDocRef = doc(db, 'appdata', LEGACY_DOC_ID);
+const appDocRef = doc(db, 'appdata', V3_DOC_ID);
+const APP_VERSION = '2026-09-03-v3';
 
 const LEVEL_XP = 15; // XP needed per level, editable
 
@@ -491,19 +496,18 @@ function requireParentUnlock(){
 
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
-// ================= ROBUST LIVE SYNC =================
-// Important rules for two-device use:
-// 1) Cached Firestore state may be rendered, but it is NEVER editable until a server snapshot arrives.
-// 2) High-value refreshes use getDocFromServer(), not getDoc(), so stale cache cannot masquerade as server truth.
-// 3) saveData() no longer blindly overwrites the entire JSON from the current device. It performs a Firestore
-//    transaction and three-way merges: last confirmed server state + local edits + latest server state.
-//    Concurrent additions in arrays with stable ids (games, tasks, shop items, etc.) are merged by id;
-//    deletions win over stale copies so removed items do not "come back" on another device.
+// ================= ROBUST LIVE SYNC V3 =================
+// Design goals:
+// - This build uses a versioned Firestore document. Old app builds can only damage the legacy document.
+// - No persistent Firestore cache: every app launch must obtain confirmed server state before edits unlock.
+// - Opening the app is not allowed to save an old local copy. The first canonical state always comes from server.
+// - User writes use a transaction + three-way merge so concurrent edits from V3 clients do not clobber each other.
 let syncReady = false;
-let isFirstServerSnapshot = true;
 let lastConfirmedData = defaultData();
 let saveQueue = Promise.resolve();
 let pendingSaveCount = 0;
+let unsubscribeLive = null;
+let startupMaintenanceDone = false;
 
 function cloneData(v){ return v===undefined ? undefined : JSON.parse(JSON.stringify(v)); }
 function isPlainObject(v){ return v && typeof v==='object' && !Array.isArray(v); }
@@ -518,14 +522,11 @@ function isAdditiveNumberPath(path){
   return /^player\.attributes\.[^.]+\.(xp|rating)$/.test(path) || path==='samBalance';
 }
 
-// Three-way merge. `base` is what this device last saw from the server when the local edit began.
-// `local` contains the user's intended edit. `remote` is the newest state inside the transaction.
 function mergeThreeWay(base, local, remote, path=''){
-  if(sameValue(local, base)) return cloneData(remote);   // only remote changed
-  if(sameValue(remote, base)) return cloneData(local);  // only local changed
+  if(sameValue(local, base)) return cloneData(remote);
+  if(sameValue(remote, base)) return cloneData(local);
   if(sameValue(local, remote)) return cloneData(local);
 
-  // Numeric counters are merged as deltas so two devices awarding XP/Sam at once do not lose one update.
   if(typeof base==='number' && typeof local==='number' && typeof remote==='number' && isAdditiveNumberPath(path)){
     return remote + (local - base);
   }
@@ -535,28 +536,23 @@ function mergeThreeWay(base, local, remote, path=''){
       const bm = new Map(base.filter(v=>isPlainObject(v)&&v.id).map(v=>[v.id,v]));
       const lm = new Map(local.filter(v=>isPlainObject(v)&&v.id).map(v=>[v.id,v]));
       const rm = new Map(remote.filter(v=>isPlainObject(v)&&v.id).map(v=>[v.id,v]));
-      const order = [];
-      remote.forEach(v=>{ if(v && v.id && !order.includes(v.id)) order.push(v.id); });
-      local.forEach(v=>{ if(v && v.id && !order.includes(v.id)) order.push(v.id); });
-      base.forEach(v=>{ if(v && v.id && !order.includes(v.id)) order.push(v.id); });
+      const order=[];
+      remote.forEach(v=>{ if(v&&v.id&&!order.includes(v.id)) order.push(v.id); });
+      local.forEach(v=>{ if(v&&v.id&&!order.includes(v.id)) order.push(v.id); });
+      base.forEach(v=>{ if(v&&v.id&&!order.includes(v.id)) order.push(v.id); });
       const out=[];
       for(const id of order){
         const b=bm.get(id), l=lm.get(id), r=rm.get(id);
-        // Local deletion: deletion wins, including against a stale/parallel remote modification.
         if(b!==undefined && l===undefined) continue;
-        // Remote deletion: do not resurrect an item from a stale local copy.
         if(b!==undefined && r===undefined) continue;
         if(b===undefined && l!==undefined && r===undefined){ out.push(cloneData(l)); continue; }
         if(b===undefined && r!==undefined && l===undefined){ out.push(cloneData(r)); continue; }
         if(b===undefined && l!==undefined && r!==undefined){ out.push(mergeThreeWay({},l,r,path+'['+id+']')); continue; }
-        if(l!==undefined && r!==undefined){ out.push(mergeThreeWay(b,l,r,path+'['+id+']')); }
+        if(l!==undefined && r!==undefined) out.push(mergeThreeWay(b,l,r,path+'['+id+']'));
       }
       return out;
     }
-
-    // Append-only/object logs without ids: keep entries from both sides. For primitive arrays or nested
-    // score-sheet arrays, the local side wins on a genuine same-field conflict.
-    const objectish = [...base,...local,...remote].some(v=>v && typeof v==='object' && !Array.isArray(v));
+    const objectish=[...base,...local,...remote].some(v=>v&&typeof v==='object'&&!Array.isArray(v));
     if(objectish){
       const out=cloneData(remote);
       const seen=new Set(out.map(v=>JSON.stringify(v)));
@@ -573,9 +569,9 @@ function mergeThreeWay(base, local, remote, path=''){
       const hasB=Object.prototype.hasOwnProperty.call(base,k);
       const hasL=Object.prototype.hasOwnProperty.call(local,k);
       const hasR=Object.prototype.hasOwnProperty.call(remote,k);
-      const childPath = path ? path+'.'+k : k;
-      if(hasB && !hasL) continue; // local deletion wins
-      if(hasB && !hasR) continue; // remote deletion also wins; never resurrect stale deleted data
+      const childPath=path ? path+'.'+k : k;
+      if(hasB && !hasL) continue;
+      if(hasB && !hasR) continue;
       if(!hasB && hasL && !hasR){ out[k]=cloneData(local[k]); continue; }
       if(!hasB && hasR && !hasL){ out[k]=cloneData(remote[k]); continue; }
       if(!hasB && hasL && hasR){ out[k]=mergeThreeWay({},local[k],remote[k],childPath); continue; }
@@ -583,132 +579,162 @@ function mergeThreeWay(base, local, remote, path=''){
     }
     return out;
   }
-
-  // Same scalar changed on both devices: the explicit local action wins this one field only,
-  // rather than replacing unrelated state across the whole application.
   return cloneData(local);
 }
 
 function parseSnapshotData(snap){
-  let parsed = defaultData();
+  let parsed=defaultData();
   if(snap.exists() && snap.data().json){
-    try{ parsed = Object.assign(defaultData(), JSON.parse(snap.data().json)); }
-    catch(e){ console.error('Invalid Firebase json', e); }
+    try{ parsed=Object.assign(defaultData(), JSON.parse(snap.data().json)); }
+    catch(e){ console.error('Invalid Firebase json',e); }
   }
-  if(snap.exists() && snap.data().taskLog !== undefined) parsed.taskLog = snap.data().taskLog;
+  if(snap.exists() && snap.data().taskLog!==undefined) parsed.taskLog=snap.data().taskLog;
   return parsed;
 }
-function withoutTaskLog(src){
-  const copy=cloneData(src);
-  delete copy.taskLog;
-  return copy;
-}
+function withoutTaskLog(src){ const copy=cloneData(src); delete copy.taskLog; return copy; }
 function setSyncOverlay(message, visible=true){
   const overlay=document.getElementById('sync-overlay');
   const text=document.getElementById('sync-overlay-text');
   if(text && message) text.textContent=message;
-  if(overlay) overlay.style.display = visible ? 'flex' : 'none';
+  if(overlay) overlay.style.display=visible?'flex':'none';
 }
 function updateSyncUi(){
   const app=document.querySelector('.app');
   if(!navigator.onLine){
     if(app) app.inert=true;
-    setSyncOverlay('Нет интернета. Действия заблокированы, чтобы старая копия на этом устройстве не перезаписала свежие данные. Подключись к интернету — приложение продолжит автоматически.', true);
+    setSyncOverlay('Нет интернета. Изменения заблокированы. Подключись к интернету — приложение загрузит подтверждённые данные с сервера.',true);
     return;
   }
   if(!syncReady){
     if(app) app.inert=true;
-    setSyncOverlay('Получаю актуальные данные из Firebase…', true);
+    setSyncOverlay('Получаю актуальные данные из Firebase…',true);
     return;
   }
   if(app) app.inert=false;
-  setSyncOverlay('', false);
+  setSyncOverlay('',false);
 }
 
-function initLiveSync(){
-  return new Promise((resolve)=>{
-    onSnapshot(appDocRef, { includeMetadataChanges: true }, async (snap)=>{
-      if(snap.metadata.hasPendingWrites) return;
-      const incoming = parseSnapshotData(snap);
+async function ensureV3Store(){
+  // Always ask the server. There is intentionally no persistent local Firestore cache in V3.
+  const v3Snap=await getDocFromServer(appDocRef);
+  if(v3Snap.exists()) return;
 
-      if(snap.metadata.fromCache){
-        // Cached state is display-only. Crucially, the overlay remains on top so no stale write can start.
-        if(!syncReady){ data=incoming; renderAll(); updateSyncUi(); }
-        return;
-      }
-
-      // This snapshot is confirmed by Firestore server.
-      lastConfirmedData = cloneData(incoming);
-      if(pendingSaveCount===0) data = cloneData(incoming);
-      syncReady = true;
-      updateSyncUi();
-
-      if(isFirstServerSnapshot){
-        isFirstServerSnapshot = false;
-        let needsSave = false;
-        if(!data.weeklyPrograms || Object.keys(data.weeklyPrograms).length===0){
-          data.weeklyPrograms[mondayStr(todayStr())] = (data.tasks||[]).map(t=>({
-            id:t.id, name:t.name, points:t.points, attr:t.attr, skillXp:t.skillXp, days:t.days, confirmRequired:t.confirmRequired
-          }));
-          needsSave = true;
-        }
-        if(!data.fixedStaleShootingXp){
-          data.player.attributes.shooting.xp = 0;
-          data.fixedStaleShootingXp = true;
-          needsSave = true;
-        }
-        if(!data.fixedMissingSamAmounts){
-          const fillSam = (list, recList)=> list.forEach(m=>{
-            if(m.samAmount===undefined || m.samAmount===null){
-              const match = recList.find(r=>r.threshold===m.threshold);
-              m.samAmount = match ? match.samAmount : 5;
-            }
-          });
-          fillSam(data.milestones.monthly, RECOMMENDED_MILESTONES.monthly);
-          fillSam(data.milestones.yearly, RECOMMENDED_MILESTONES.yearly);
-          data.fixedMissingSamAmounts = true;
-          needsSave = true;
-        }
-        // Migrate only if the server genuinely has no dedicated taskLog field. The old version repeated
-        // a whole-map migration and could race with another device's checkbox write.
-        if(snap.data().taskLog === undefined){
-          try{ await setDoc(appDocRef, { taskLog: data.taskLog || {}, updatedAt: serverTimestamp() }, { merge:true }); }
-          catch(e){ console.error('taskLog migration failed', e); }
-        }
-        if(!data.migratedTaskLogField){ data.migratedTaskLogField=true; needsSave=true; }
-        const weeksChanged = settleWeeks();
-        const periodsChanged = settlePeriods();
-        if(needsSave || weeksChanged || periodsChanged) saveData();
-        renderAll();
-        resolve();
-      } else {
-        renderAll();
-      }
-    }, (err)=>{
-      console.error('live sync error', err);
-      syncReady=false;
-      setSyncOverlay('Не удалось подключиться к Firebase. Изменения заблокированы, чтобы не потерять данные. Проверь интернет и доступ к Firestore.', true);
-      resolve();
-    });
+  // First V3 launch only: copy the CURRENT legacy server state into the isolated V3 document.
+  // After this point legacy clients may keep changing appdata/samir, but V3 never reads it again.
+  const legacySnap=await getDocFromServer(legacyAppDocRef);
+  let seed=defaultData();
+  if(legacySnap.exists()) seed=parseSnapshotData(legacySnap);
+  const rest=withoutTaskLog(seed);
+  await setDoc(appDocRef, {
+    json: JSON.stringify(rest),
+    taskLog: seed.taskLog || {},
+    schemaVersion: 3,
+    appVersion: APP_VERSION,
+    migratedFrom: `appdata/${LEGACY_DOC_ID}`,
+    migratedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
 }
-async function loadData(){ await initLiveSync(); }
+
+async function applyFreshServerState(){
+  const snap=await getDocFromServer(appDocRef);
+  if(!snap.exists()) throw new Error('V3 Firestore document is missing');
+  const fresh=parseSnapshotData(snap);
+  data=cloneData(fresh);
+  lastConfirmedData=cloneData(fresh);
+  syncReady=true;
+  updateSyncUi();
+  renderAll();
+}
+
+function startLiveSync(){
+  if(unsubscribeLive) unsubscribeLive();
+  unsubscribeLive=onSnapshot(appDocRef, {includeMetadataChanges:true}, (snap)=>{
+    if(snap.metadata.hasPendingWrites || snap.metadata.fromCache) return;
+    const incoming=parseSnapshotData(snap);
+    lastConfirmedData=cloneData(incoming);
+    if(pendingSaveCount===0){ data=cloneData(incoming); renderAll(); }
+    syncReady=true;
+    updateSyncUi();
+  }, (err)=>{
+    console.error('live sync error',err);
+    syncReady=false;
+    updateSyncUi();
+  });
+}
+
+async function runStartupMaintenance(){
+  // This runs only AFTER a guaranteed server read from the isolated V3 document.
+  if(startupMaintenanceDone) return;
+  startupMaintenanceDone=true;
+  let needsSave=false;
+  if(!data.weeklyPrograms || Object.keys(data.weeklyPrograms).length===0){
+    data.weeklyPrograms[mondayStr(todayStr())]=(data.tasks||[]).map(t=>({
+      id:t.id,name:t.name,points:t.points,attr:t.attr,skillXp:t.skillXp,days:t.days,confirmRequired:t.confirmRequired
+    }));
+    needsSave=true;
+  }
+  if(!data.fixedStaleShootingXp){
+    data.player.attributes.shooting.xp=0;
+    data.fixedStaleShootingXp=true;
+    needsSave=true;
+  }
+  if(!data.fixedMissingSamAmounts){
+    const fillSam=(list,recList)=>list.forEach(m=>{
+      if(m.samAmount===undefined || m.samAmount===null){
+        const match=recList.find(r=>r.threshold===m.threshold);
+        m.samAmount=match?match.samAmount:5;
+      }
+    });
+    fillSam(data.milestones.monthly,RECOMMENDED_MILESTONES.monthly);
+    fillSam(data.milestones.yearly,RECOMMENDED_MILESTONES.yearly);
+    data.fixedMissingSamAmounts=true;
+    needsSave=true;
+  }
+  if(!data.migratedTaskLogField){ data.migratedTaskLogField=true; needsSave=true; }
+  const weeksChanged=settleWeeks();
+  const periodsChanged=settlePeriods();
+  if(needsSave || weeksChanged || periodsChanged) await saveData();
+  renderAll();
+}
+
+async function loadData(){
+  syncReady=false;
+  updateSyncUi();
+  try{
+    await ensureV3Store();
+    await applyFreshServerState();
+    startLiveSync();
+    await runStartupMaintenance();
+  }catch(e){
+    console.error('V3 startup failed',e);
+    syncReady=false;
+    updateSyncUi();
+    setSyncOverlay('Не удалось получить подтверждённые данные с Firebase. Ничего не будет записано. Проверь интернет и открой приложение снова.',true);
+  }
+}
 
 let saveTimer=null;
 function showSaveBar(){
   const bar=document.getElementById('savebar');
   bar.classList.add('show');
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>bar.classList.remove('show'), 900);
+  saveTimer=setTimeout(()=>bar.classList.remove('show'),900);
 }
 
-async function commitMergedData(localSnapshot, baseSnapshot){
-  return runTransaction(db, async (transaction)=>{
-    const snap = await transaction.get(appDocRef);
-    const remoteFull = parseSnapshotData(snap);
-    const mergedRest = mergeThreeWay(withoutTaskLog(baseSnapshot), withoutTaskLog(localSnapshot), withoutTaskLog(remoteFull));
-    transaction.set(appDocRef, { json: JSON.stringify(mergedRest), updatedAt: serverTimestamp() }, { merge:true });
-    return Object.assign(defaultData(), mergedRest, {taskLog: remoteFull.taskLog || {}});
+async function commitMergedData(localSnapshot,baseSnapshot){
+  return runTransaction(db,async(transaction)=>{
+    const snap=await transaction.get(appDocRef);
+    if(!snap.exists()) throw new Error('V3 canonical document disappeared');
+    const remoteFull=parseSnapshotData(snap);
+    const mergedRest=mergeThreeWay(withoutTaskLog(baseSnapshot),withoutTaskLog(localSnapshot),withoutTaskLog(remoteFull));
+    transaction.set(appDocRef,{
+      json:JSON.stringify(mergedRest),
+      schemaVersion:3,
+      appVersion:APP_VERSION,
+      updatedAt:serverTimestamp()
+    },{merge:true});
+    return Object.assign(defaultData(),mergedRest,{taskLog:remoteFull.taskLog||{}});
   });
 }
 
@@ -716,77 +742,68 @@ function saveData(){
   if(!syncReady || !navigator.onLine){
     console.warn('saveData blocked: server state is not confirmed');
     updateSyncUi();
-    // Undo any accidental in-memory edit that somehow bypassed the blocking overlay.
-    data = cloneData(lastConfirmedData);
+    data=cloneData(lastConfirmedData);
     renderAll();
     return Promise.resolve(false);
   }
-
-  const localSnapshot = cloneData(data);
-  const baseSnapshot = cloneData(lastConfirmedData);
+  const localSnapshot=cloneData(data);
+  const baseSnapshot=cloneData(lastConfirmedData);
   pendingSaveCount++;
-  saveQueue = saveQueue.then(async ()=>{
+  saveQueue=saveQueue.then(async()=>{
     try{
-      const merged = await commitMergedData(localSnapshot, baseSnapshot);
-      lastConfirmedData = cloneData(merged);
+      const merged=await commitMergedData(localSnapshot,baseSnapshot);
+      lastConfirmedData=cloneData(merged);
       showSaveBar();
       return true;
     }catch(e){
-      console.error('transactional save failed', e);
+      console.error('transactional save failed',e);
       alert('Не удалось сохранить данные в Firebase. Изменение не подтверждено — проверь интернет и повтори действие.');
       return false;
     }finally{
       pendingSaveCount--;
       if(pendingSaveCount===0 && syncReady && navigator.onLine){
-        // Re-read canonical server state after all queued local writes. This also updates the UI if
-        // another device changed something while this device was saving.
-        try{ await refreshFromServer(true); renderAll(); }catch(_){ /* refreshFromServer already logged */ }
+        try{ await refreshFromServer(true); renderAll(); }catch(_){}
       }
     }
   });
   return saveQueue;
 }
 
-// Checkbox entries are already stored as individual Firestore field paths. Keep that granular write,
-// but use a server timestamp and never fall back to a full JSON save (the old fallback could not even
-// save taskLog because saveData intentionally excludes it).
-async function saveTaskLogField(dateStr, taskId, value){
+async function saveTaskLogField(dateStr,taskId,value){
   if(!syncReady || !navigator.onLine){ updateSyncUi(); return false; }
-  if(!data.taskLog[dateStr]) data.taskLog[dateStr] = {};
-  if(value===null) delete data.taskLog[dateStr][taskId]; else data.taskLog[dateStr][taskId] = value;
+  if(!data.taskLog[dateStr]) data.taskLog[dateStr]={};
+  if(value===null) delete data.taskLog[dateStr][taskId]; else data.taskLog[dateStr][taskId]=value;
   try{
-    const path = `taskLog.${dateStr}.${taskId}`;
-    await updateDoc(appDocRef, { [path]: value===null ? deleteField() : value, updatedAt: serverTimestamp() });
+    const path=`taskLog.${dateStr}.${taskId}`;
+    await updateDoc(appDocRef,{[path]:value===null?deleteField():value,schemaVersion:3,appVersion:APP_VERSION,updatedAt:serverTimestamp()});
     if(!lastConfirmedData.taskLog[dateStr]) lastConfirmedData.taskLog[dateStr]={};
     if(value===null) delete lastConfirmedData.taskLog[dateStr][taskId];
     else lastConfirmedData.taskLog[dateStr][taskId]=cloneData(value);
     showSaveBar();
     return true;
   }catch(e){
-    console.error('taskLog field save failed', e);
+    console.error('taskLog field save failed',e);
     alert('Не удалось сохранить отметку задания. Проверь интернет и поставь галочку ещё раз.');
-    try{ await refreshFromServer(true); renderAll(); }catch(_){ }
+    try{ await refreshFromServer(true); renderAll(); }catch(_){}
     return false;
   }
 }
 
-// Guaranteed server read. Firebase documents that getDoc() may return cached data, whereas
-// getDocFromServer() never does. If the server cannot be reached, abort the user action instead of
-// continuing with a stale copy and later overwriting newer data.
 async function refreshFromServer(silent=false){
   try{
-    const freshSnap = await getDocFromServer(appDocRef);
-    const fresh = parseSnapshotData(freshSnap);
-    lastConfirmedData = cloneData(fresh);
-    if(pendingSaveCount===0) data = cloneData(fresh);
+    const freshSnap=await getDocFromServer(appDocRef);
+    if(!freshSnap.exists()) throw new Error('V3 canonical document is missing');
+    const fresh=parseSnapshotData(freshSnap);
+    lastConfirmedData=cloneData(fresh);
+    if(pendingSaveCount===0) data=cloneData(fresh);
     syncReady=true;
     updateSyncUi();
     return true;
   }catch(e){
-    console.error('refreshFromServer failed', e);
+    console.error('refreshFromServer failed',e);
     syncReady=false;
     updateSyncUi();
-    if(!silent) alert('Не удалось получить свежие данные из Firebase. Действие отменено, чтобы ничего не перезаписать старой копией.');
+    if(!silent) alert('Не удалось получить свежие данные из Firebase. Действие отменено, чтобы ничего не перезаписать.');
     throw e;
   }
 }
