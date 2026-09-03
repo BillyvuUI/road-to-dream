@@ -627,7 +627,7 @@ function updateSyncUi(){
 
 function initLiveSync(){
   return new Promise((resolve)=>{
-    onSnapshot(appDocRef, async (snap)=>{
+    onSnapshot(appDocRef, { includeMetadataChanges: true }, async (snap)=>{
       if(snap.metadata.hasPendingWrites) return;
       const incoming = parseSnapshotData(snap);
 
