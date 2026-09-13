@@ -86,6 +86,7 @@
   .pill{display:inline-block; background:var(--panel-2); border:1px solid rgba(0,212,255,.15); border-radius:999px; padding:2px 9px; font-size:11px; color:var(--steel); margin-left:6px;}
   .empty{color:var(--steel); font-size:13px; padding:14px 0; text-align:center;}
   .muted{color:var(--steel); font-size:12px;}
+  .field-help{color:var(--steel); font-size:10px; line-height:1.35; margin-top:5px;}
 
   table{width:100%; border-collapse:collapse; font-size:13px;}
   thead th{text-align:left; font-family:'Oswald',sans-serif; text-transform:uppercase; font-size:10.5px; letter-spacing:.5px;
@@ -298,7 +299,7 @@
   <div style="max-width:420px; background:var(--panel); border:1px solid rgba(0,212,255,.25); border-radius:14px; padding:20px; box-shadow:0 12px 36px rgba(0,0,0,.45);">
     <div style="font-family:'Oswald',sans-serif; font-size:18px; color:var(--gold); margin-bottom:8px;">СИНХРОНИЗАЦИЯ</div>
     <div id="sync-overlay-text" class="muted" style="font-size:13px; line-height:1.45;">Получаю актуальные данные из Firebase…</div>
-    <div style="margin-top:8px;font-size:10px;opacity:.45;letter-spacing:.08em">SYNC V3 · 03.09.2026</div>
+    <div style="margin-top:8px;font-size:10px;opacity:.45;letter-spacing:.08em">SYNC V3.1 · 13.09.2026</div>
   </div>
 </div>
 
@@ -323,7 +324,7 @@ const LEGACY_DOC_ID = 'samir';
 const V3_DOC_ID = 'samir_v3_20260903';
 const legacyAppDocRef = doc(db, 'appdata', LEGACY_DOC_ID);
 const appDocRef = doc(db, 'appdata', V3_DOC_ID);
-const APP_VERSION = '2026-09-03-v3';
+const APP_VERSION = '2026-09-13-v3.1';
 
 const LEVEL_XP = 15; // XP needed per level, editable
 
@@ -381,17 +382,19 @@ const ATTR_DEFS = {
 };
 
 // Raw-stat -> XP weights. Every field below is either a countable, observable
-// match event, or (for 'decisions' only) a coach-style holistic grade — no
-// invented pseudo-metrics like xG or split speed/acceleration ratings.
+// match event, or (for 'decisions' only) a coach-style holistic grade.
+// Match-stat schema v2 starts with this build; legacy games keep their stored XP/rating.
+const MATCH_STATS_VERSION = 2;
 const XP_WEIGHTS = {
-  skating:    { racesWon:1.2, racesLost:-1.0, beatenOnSpeed:-1.0 },
-  dribbling:  { successfulDekes:1.5, failedDekes:-1.2 },
-  shooting:   { goals:4, shotsOnTarget:0.8, shotsTotal:0.15 }, // + a derived conversion penalty applied separately, see save-game handler
-  iq:         { assists:2.5, turnovers:-2.0, decisions:1.5, lateReturns:-1.0, plusMinus:1.5, chancesCreated:0.8 },
-  battle:     { duelsWon:1.5, duelsLost:-1.2, takeaways:1, penalties:-0.8 },
+  skating:    { speedAdvantage:1.0, speedCatchup:0.8, lostPureSpeed:-0.8 },
+  dribbling:  { successfulDekes:1.5, failedDekes:-1.2, controlledEntries:0.8 },
+  shooting:   { goals:4, shotsOnTarget:0.2, shotsTotal:0, dangerousShots:0.8 },
+  iq:         { assists:2.5, turnovers:-2.0, decisions:0.5, lateReturns:-1.0, chancesCreated:0.8, controlledExits:0.7 },
+  battle:     { duelsWon:1.5, duelsLost:-1.2, takeaways:1, penalties:-0.8, successfulForechecks:0.8 },
 };
 const SUBJECTIVE_FIELDS = new Set(['decisions']); // only field graded 1-10 rather than counted
-const SHOT_CONVERSION_PENALTY = 1.2; // per shot on target that did NOT become a goal. Must outweigh the +0.8 accuracy credit + 0.15 volume credit, or "shoots a lot, scores nothing" keeps net-rewarding him — that was the exact bug reported and fixed here.
+const LOW_DANGER_SHOT_PENALTY = 0.2; // every shot outside the dangerous area slightly offsets empty shot volume
+const MATCH_SKILL_ATTRS = ['skating','dribbling','shooting','iq','battle']; // fitness never grows from matches
 
 // Single-match rating (Flashscore-style) — fast per-game signal, separate from
 // the slow attribute XP. base + scaled sum of this game's total XP across attrs.
@@ -402,6 +405,9 @@ const MATCH_RATING_SCALE = 0.15;
 const HOT_STREAK_LEN = 3;
 const HOT_STREAK_THRESHOLD = 7.0;
 const HOT_STREAK_BONUS = 4;
+const SAM_STREAK_LEN = 3;
+const SAM_STREAK_THRESHOLD = 8.0;
+const SAM_STREAK_BONUS = 3;
 const MAX_MARKS_PER_SESSION = 3; // training checklist: cap per session, mirrors the wall poster
 const TRAINING_XP_PER_MARK = 1; // flat for every training item
 const DEFAULT_PARENT_PIN = '1111'; // change data.parentPin from Settings once unlocked
@@ -946,22 +952,25 @@ function settlePeriods(){
 }
 
 const SUB_LABELS = {
-  racesWon:'Забеги за шайбой выиграно', racesLost:'Забеги за шайбой проиграно', beatenOnSpeed:'Обыграли на скорости',
-  successfulDekes:'Успешные обводки', failedDekes:'Неудачные обводки',
-  goals:'Голы', shotsOnTarget:'Броски в створ', shotsTotal:'Броски всего',
+  speedAdvantage:'Создал преимущество скоростью', speedCatchup:'Догнал соперника скоростью', lostPureSpeed:'Проиграл эпизод на чистой скорости',
+  successfulDekes:'Успешные обводки', failedDekes:'Неудачные обводки', controlledEntries:'Контролируемые входы в зону',
+  goals:'Голы', shotsOnTarget:'Броски в створ', shotsTotal:'Броски всего', dangerousShots:'Броски из опасной зоны',
   assists:'Голевые передачи', turnovers:'Потери шайбы', decisions:'Принятие решений',
-  lateReturns:'Не успел вернуться в оборону', plusMinus:'+/- на льду', chancesCreated:'Явные моменты созданы',
-  duelsWon:'Единоборства выиграно', duelsLost:'Единоборства проиграно', takeaways:'Отборы', penalties:'Штрафы'
+  lateReturns:'Не успел вернуться в оборону', chancesCreated:'Создал бросок партнёру', controlledExits:'Контролируемые выходы из зоны',
+  duelsWon:'Единоборства выиграно', duelsLost:'Единоборства проиграно', takeaways:'Отборы', penalties:'Штрафы', successfulForechecks:'Успешный форчек'
 };
 
 function computeAttrSubAverages(attrKey, lastN=5){
   if(!XP_WEIGHTS[attrKey]) return null; // e.g. fitness — grows from training log, not match raw stats
   const recent = data.games.filter(g=>!g.missed).slice(-lastN);
   const fields = Object.keys(XP_WEIGHTS[attrKey]);
-  if(recent.length===0) return fields.map(f=>({field:f, avg:null}));
+  if(recent.length===0) return fields.map(f=>({field:f, avg:null, count:0}));
   return fields.map(f=>{
-    const sum = recent.reduce((s,g)=> s + (g.raw[f]||0), 0);
-    return {field:f, avg: sum/recent.length};
+    // A missing field in a legacy match means "not tracked yet", not zero.
+    const tracked = recent.filter(g=>g.raw && Object.prototype.hasOwnProperty.call(g.raw,f));
+    if(tracked.length===0) return {field:f, avg:null, count:0};
+    const sum = tracked.reduce((acc,g)=> acc + (Number(g.raw[f])||0), 0);
+    return {field:f, avg: sum/tracked.length, count:tracked.length};
   });
 }
 
@@ -1013,6 +1022,50 @@ function applyXp(attrKey, xpDelta){
 
 function recordOvrSnapshot(dateStr){
   data.player.ovrHistory[monthKey(dateStr)] = ovr();
+}
+
+
+// Reconcile only bonuses created by match-stat schema v2. Legacy bonuses remain historical.
+// Streak counts can include legacy played games, but a payout is attached only to a v2 game.
+function reconcileMatchStreakRewards(){
+  const changes = [];
+  const played = data.games.filter(g=>!g.missed && typeof g.matchRating==='number')
+    .slice().sort((a,b)=> (a.date||'').localeCompare(b.date||'') || (a.id||'').localeCompare(b.id||''));
+  let streak7 = 0, streak8 = 0;
+
+  played.forEach(g=>{
+    streak7 = g.matchRating >= HOT_STREAK_THRESHOLD ? streak7 + 1 : 0;
+    const eligibleV2 = (g.matchSchemaVersion||0) >= MATCH_STATS_VERSION;
+    const shouldHot = eligibleV2 && streak7>0 && streak7 % HOT_STREAK_LEN === 0;
+    const hasV2Hot = g.hotStreakBonusAwarded === true && g.hotStreakBonusVersion === MATCH_STATS_VERSION;
+    if(shouldHot && !hasV2Hot){
+      MATCH_SKILL_ATTRS.forEach(k=>applyXp(k, HOT_STREAK_BONUS));
+      g.hotStreakBonusAwarded = true;
+      g.hotStreakBonusVersion = MATCH_STATS_VERSION;
+      changes.push({gameId:g.id, type:'xp-add', streak:streak7});
+    } else if(!shouldHot && hasV2Hot){
+      MATCH_SKILL_ATTRS.forEach(k=>applyXp(k, -HOT_STREAK_BONUS));
+      g.hotStreakBonusAwarded = false;
+      delete g.hotStreakBonusVersion;
+      changes.push({gameId:g.id, type:'xp-remove', streak:streak7});
+    }
+
+    streak8 = g.matchRating >= SAM_STREAK_THRESHOLD ? streak8 + 1 : 0;
+    const shouldSam = eligibleV2 && streak8>0 && streak8 % SAM_STREAK_LEN === 0;
+    const currentSam = Number(g.samStreakBonusAwarded)||0;
+    if(shouldSam && currentSam===0){
+      data.samBalance += SAM_STREAK_BONUS;
+      g.samStreakBonusAwarded = SAM_STREAK_BONUS;
+      data.samLedger.push({date:todayStr(), delta:SAM_STREAK_BONUS, reason:`Серия ${streak8} матчей с оценкой ≥${SAM_STREAK_THRESHOLD}`, gameId:g.id, kind:'matchStreak8'});
+      changes.push({gameId:g.id, type:'sam-add', streak:streak8});
+    } else if(!shouldSam && currentSam>0){
+      data.samBalance -= currentSam;
+      delete g.samStreakBonusAwarded;
+      data.samLedger.push({date:todayStr(), delta:-currentSam, reason:`Корректировка серии матчей ≥${SAM_STREAK_THRESHOLD}`, gameId:g.id, kind:'matchStreak8-reversal'});
+      changes.push({gameId:g.id, type:'sam-remove', streak:streak8});
+    }
+  });
+  return changes;
 }
 
 // ================= TAB SWITCHING =================
@@ -1143,7 +1196,7 @@ function renderPlayer(){
           <div class="xp-bg"><div class="xp-fill" style="width:${Math.max(0,Math.min(100,a.xp/LEVEL_XP*100))}%"></div></div>
           ${parentUnlocked ? `<div class="muted" style="font-size:10px; margin-top:2px;">${a.xp.toFixed(1)} / ${LEVEL_XP} XP</div>` : ''}
           <div id="detail-${a.key}" style="display:none; margin-top:8px; padding:8px 10px; background:var(--panel-2); border-radius:8px;">
-            <div class="muted" style="margin-bottom:4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из матчей (среднее за ${Math.min(5,data.games.filter(g=>!g.missed).length)} игр)</div>
+            <div class="muted" style="margin-bottom:4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из матчей (последние 5; новые показатели — только где отслеживались)</div>
             ${matchHtml}
             <div class="muted" style="margin:10px 0 4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из заданий</div>
             ${taskHtml}
@@ -1222,15 +1275,11 @@ function renderSeasonSummary(){
   const duelsLostTotal = played.reduce((s,g)=>s+(g.raw.duelsLost||0),0);
   const duelsWinPct = duelsWonTotal+duelsLostTotal>0 ? (duelsWonTotal/(duelsWonTotal+duelsLostTotal)*100) : null;
 
-  const attrs = Object.entries(data.player.attributes);
-  const lagging = attrs.reduce((min,[k,a])=> (!min || a.rating<min[1].rating) ? [k,a] : min, null);
-
   wrap.innerHTML = `
     <div class="row"><span class="muted" style="flex:2;">Сыграно / пропущено (травма·болезнь)</span><b>${played.length} / ${missedCount}</b></div>
     <div class="row"><span class="muted" style="flex:2;">Средняя оценка за матч (сезон)</span><b>${avgRating.toFixed(1)}</b></div>
     <div class="row"><span class="muted" style="flex:2;">Средняя оценка: 1-я половина сезона → 2-я</span><b>${firstAvg?firstAvg.toFixed(1):'—'} → ${secondAvg?secondAvg.toFixed(1):'—'}</b></div>
     <div class="row"><span class="muted" style="flex:2;">% выигранных единоборств за сезон</span><b>${duelsWinPct!==null?duelsWinPct.toFixed(0)+'%':'—'}</b></div>
-    <div class="row"><span class="muted" style="flex:2;">Самый отстающий навык сейчас</span><b>${icon(lagging[0])} ${ATTR_DEFS[lagging[0]].label} (${lagging[1].rating})</b></div>
   `;
 }
 
@@ -1239,10 +1288,13 @@ let editingGameId = null;
 function renderGame(){
   const el = document.getElementById('tab-game');
   const editGame = editingGameId ? data.games.find(g=>g.id===editingGameId) : null;
+  const legacyEdit = !!(editGame && (editGame.matchSchemaVersion||0) < MATCH_STATS_VERSION);
+  const help = txt => `<div class="field-help">${txt}</div>`;
   el.innerHTML = `
     <div class="card">
       <h2>${editGame ? 'Редактирование игры' : 'Внести игру'}</h2>
       ${editGame ? `<div class="goal-box" style="margin-bottom:12px;">✎ Редактируешь игру от ${editGame.date}. <button class="ghost" id="cancel-edit" type="button" style="margin-left:8px;">Отменить редактирование</button></div>` : ''}
+      ${legacyEdit ? `<div class="goal-box" style="margin-bottom:12px; border-color:var(--electric);"><b>Старый матч.</b> Исторические XP и оценка этого матча при сохранении не пересчитываются по новой формуле. Новые показатели можно заполнить при желании, но они будут только статистикой этого матча.</div>` : ''}
       <div class="row">
         <div class="field"><label class="f">Дата</label><input type="date" id="g-date"></div>
         <div class="field"><label class="f">Соперник</label><input id="g-opp" placeholder="Название команды"></div>
@@ -1260,13 +1312,13 @@ function renderGame(){
         </label>
       </div>
 
-      <fieldset class="stat-fieldset"><legend>${icon('skating',14)} Катание</legend>
+      <fieldset class="stat-fieldset"><legend>${icon('skating',14)} Катание — преимущество ногами</legend>
         <div class="row">
-          <div class="field"><label class="f">Забеги за шайбой выиграно</label><input type="number" min="0" id="f-racesWon" value="0"></div>
-          <div class="field"><label class="f">Забеги за шайбой проиграно</label><input type="number" min="0" id="f-racesLost" value="0"></div>
+          <div class="field"><label class="f">Создал преимущество скоростью</label><input type="number" min="0" id="f-speedAdvantage" value="0">${help('Самир именно скоростью/ускорением выиграл у соперника позицию, создал заметный отрыв или открыл пространство для продолжения атаки. Обводка клюшкой сама по себе не считается.')}</div>
+          <div class="field"><label class="f">Догнал соперника скоростью</label><input type="number" min="0" id="f-speedCatchup" value="0">${help('Соперник имел преимущество, а Самир за счёт катания ликвидировал отрыв и остановил развитие эпизода или навязал борьбу.')}</div>
         </div>
         <div class="row">
-          <div class="field"><label class="f">Обыграли на скорости</label><input type="number" min="0" id="f-beatenOnSpeed" value="0"></div>
+          <div class="field"><label class="f">Проиграл эпизод на чистой скорости</label><input type="number" min="0" id="f-lostPureSpeed" value="0">${help('Только при примерно равных стартовых условиях, когда соперник ушёл именно за счёт скорости/ускорения. Поздняя реакция или ошибка позиции сюда не относятся.')}</div>
         </div>
       </fieldset>
 
@@ -1275,6 +1327,9 @@ function renderGame(){
           <div class="field"><label class="f">Успешные обводки</label><input type="number" min="0" id="f-successfulDekes" value="0"></div>
           <div class="field"><label class="f">Неудачные обводки</label><input type="number" min="0" id="f-failedDekes" value="0"></div>
         </div>
+        <div class="row">
+          <div class="field"><label class="f">Контролируемые входы в зону</label><input type="number" min="0" id="f-controlledEntries" value="0">${help('Самир пересёк синюю линию чужой зоны с шайбой под контролем, и команда сохранила владение. Вброс/заброс шайбы без контроля не считается.')}</div>
+        </div>
       </fieldset>
 
       <fieldset class="stat-fieldset"><legend>${icon('shooting',14)} Бросок</legend>
@@ -1282,6 +1337,9 @@ function renderGame(){
           <div class="field"><label class="f">Голы</label><input type="number" min="0" id="f-goals" value="0"></div>
           <div class="field"><label class="f">Броски в створ</label><input type="number" min="0" id="f-shotsOnTarget" value="0"></div>
           <div class="field"><label class="f">Броски всего</label><input type="number" min="0" id="f-shotsTotal" value="0"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label class="f">Броски из опасной зоны</label><input type="number" min="0" id="f-dangerousShots" value="0">${help('Бросок из центральной опасной зоны перед воротами — слот/пространство между кругами и воротами. Дальний бросок от синей линии или с острого угла сюда не относится.')}</div>
         </div>
       </fieldset>
 
@@ -1293,8 +1351,10 @@ function renderGame(){
         </div>
         <div class="row">
           <div class="field"><label class="f">Не успел вернуться в оборону</label><input type="number" min="0" id="f-lateReturns" value="0"></div>
-          <div class="field"><label class="f">+/- на льду</label><input type="number" min="-5" max="5" id="f-plusMinus" value="0"></div>
-          <div class="field"><label class="f">Явные моменты созданы</label><input type="number" min="0" id="f-chancesCreated" value="0"></div>
+          <div class="field"><label class="f">Создал бросок партнёру</label><input type="number" min="0" id="f-chancesCreated" value="0">${help('После передачи, скидки или другого действия Самира партнёр сразу получил возможность бросить. Просто хороший пас без последующего броска не считается.')}</div>
+        </div>
+        <div class="row">
+          <div class="field"><label class="f">Контролируемые выходы из зоны</label><input type="number" min="0" id="f-controlledExits" value="0">${help('Самир помог вывести шайбу из своей зоны с сохранением владения — сам вышел с шайбой или сделал контролируемую передачу партнёру за синюю. Обычный выброс шайбы не считается.')}</div>
         </div>
       </fieldset>
 
@@ -1307,6 +1367,9 @@ function renderGame(){
           <div class="field"><label class="f">Отборы</label><input type="number" min="0" id="f-takeaways" value="0"></div>
           <div class="field"><label class="f">Штрафы</label><input type="number" min="0" id="f-penalties" value="0"></div>
         </div>
+        <div class="row">
+          <div class="field"><label class="f">Успешный форчек</label><input type="number" min="0" id="f-successfulForechecks" value="0">${help('Давление Самира в чужой зоне привело к потере шайбы соперником, плохой передаче, вынужденному выбросу или возвращению владения нашей командой. Просто подъехал к игроку — не считается. Один эпизод форчека = максимум 1 отметка.')}</div>
+        </div>
       </fieldset>
 
       ${getRosterNames().length>0 ? `
@@ -1317,8 +1380,6 @@ function renderGame(){
           <select id="sh-action" style="flex:1;">
             <option value="goals">Гол</option>
             <option value="assists">Передача</option>
-            <option value="plusMinusPlus">+</option>
-            <option value="plusMinusMinus">−</option>
             <option value="penalties">Штраф</option>
           </select>
           <input id="sh-count" type="number" min="1" value="1" style="max-width:70px;">
@@ -1330,6 +1391,12 @@ function renderGame(){
     </div>
     <div id="game-history"></div>
   `;
+
+  const NEW_METRIC_FIELDS = new Set(['speedAdvantage','speedCatchup','lostPureSpeed','controlledEntries','dangerousShots','controlledExits','successfulForechecks']);
+  const FORM_FIELDS = ['speedAdvantage','speedCatchup','lostPureSpeed','successfulDekes','failedDekes','controlledEntries',
+    'goals','shotsOnTarget','shotsTotal','dangerousShots','assists','turnovers','decisions','lateReturns','chancesCreated','controlledExits',
+    'duelsWon','duelsLost','takeaways','penalties','successfulForechecks'];
+
   if(editGame){
     document.getElementById('g-date').value = editGame.date;
     document.getElementById('g-opp').value = editGame.opponent;
@@ -1338,6 +1405,13 @@ function renderGame(){
       const f = document.getElementById('f-'+k);
       if(f) f.value = v;
     });
+    if(legacyEdit){
+      NEW_METRIC_FIELDS.forEach(k=>{
+        if(!editGame.raw || !Object.prototype.hasOwnProperty.call(editGame.raw,k)){
+          const f=document.getElementById('f-'+k); if(f) f.value='';
+        }
+      });
+    }
     const cancelBtn = document.getElementById('cancel-edit');
     if(cancelBtn) cancelBtn.onclick = ()=>{ editingGameId = null; renderGame(); };
   } else {
@@ -1347,16 +1421,14 @@ function renderGame(){
     document.querySelectorAll('.stat-fieldset').forEach(f=> f.style.display = e.target.checked ? 'none' : '');
   };
 
-  const ACTION_LABELS = {goals:'Гол', assists:'Передача', plusMinusPlus:'+', plusMinusMinus:'−', penalties:'Штраф'};
+  const ACTION_LABELS = {goals:'Гол', assists:'Передача', penalties:'Штраф'};
   let sheetEntries = editGame && editGame.scoresheet ? editGame.scoresheet.flatMap(([name,s])=>{
     const entries = [];
     if(s.goals) entries.push({name, action:'goals', count:s.goals});
     if(s.assists) entries.push({name, action:'assists', count:s.assists});
-    if(s.plusMinus>0) entries.push({name, action:'plusMinusPlus', count:s.plusMinus});
-    if(s.plusMinus<0) entries.push({name, action:'plusMinusMinus', count:-s.plusMinus});
     if(s.penalties) entries.push({name, action:'penalties', count:s.penalties});
     return entries;
-  }) : []; // {name, action, count}
+  }) : [];
   const sheetListEl = document.getElementById('scoresheet-list');
   function renderSheetList(){
     if(!sheetListEl) return;
@@ -1381,10 +1453,8 @@ function renderGame(){
   function buildScoresheetFromEntries(){
     const agg = {};
     sheetEntries.forEach(e=>{
-      if(!agg[e.name]) agg[e.name] = {goals:0, assists:0, plusMinus:0, penalties:0};
-      if(e.action==='plusMinusPlus') agg[e.name].plusMinus += e.count;
-      else if(e.action==='plusMinusMinus') agg[e.name].plusMinus -= e.count;
-      else agg[e.name][e.action] += e.count;
+      if(!agg[e.name]) agg[e.name] = {goals:0, assists:0, penalties:0};
+      agg[e.name][e.action] += e.count;
     });
     return agg;
   }
@@ -1394,80 +1464,96 @@ function renderGame(){
     const opponent = document.getElementById('g-opp').value.trim() || '—';
     const matchType = document.getElementById('g-type').value;
     const missed = document.getElementById('g-missed').checked;
-    await refreshFromServer(); // pull the latest games list before adding to it — closes the race window
+    await refreshFromServer(); // latest canonical list before mutation
+
+    let editedGame = editingGameId ? data.games.find(g=>g.id===editingGameId) : null;
+    const isLegacy = !!(editedGame && (editedGame.matchSchemaVersion||0) < MATCH_STATS_VERSION);
 
     if(missed){
-      data.games.push({id:uid(), date, opponent, matchType, missed:true, raw:null, xpGained:null, matchRating:null, ovrAfter: ovr(), scoresheet:[]});
+      if(editedGame){
+        alert('Для уже внесённого матча статус «пропущено» не меняем через редактирование. Удали запись и внеси её заново как пропущенную.');
+        return;
+      }
+      data.games.push({id:uid(), date, opponent, matchType, missed:true, raw:null, xpGained:null, matchRating:null, ovrAfter: ovr(), scoresheet:[], matchSchemaVersion:MATCH_STATS_VERSION});
       data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+      reconcileMatchStreakRewards();
       saveData(); renderPlayer(); renderGame();
       alert('Игра отмечена как пропущенная — рейтинги не изменились.');
       return;
     }
 
-    const raw = {};
-    ['racesWon','racesLost','beatenOnSpeed','successfulDekes','failedDekes','goals','shotsOnTarget','shotsTotal',
-     'assists','turnovers','decisions','lateReturns','plusMinus','chancesCreated',
-     'duelsWon','duelsLost','takeaways','penalties'].forEach(k=>{
-      raw[k] = parseFloat(document.getElementById('f-'+k).value)||0;
+    let raw = isLegacy ? {...(editedGame.raw||{})} : {};
+    FORM_FIELDS.forEach(k=>{
+      const field = document.getElementById('f-'+k);
+      if(!field) return;
+      const txt = String(field.value ?? '').trim();
+      if(isLegacy && NEW_METRIC_FIELDS.has(k) && txt==='') return; // keep "not tracked" truly absent
+      raw[k] = txt==='' ? 0 : (parseFloat(txt)||0);
     });
+
+    // Logical consistency checks for the new match schema. Legacy matches may contain
+    // historically incomplete shot counts, so metadata-only edits must not be blocked.
+    if(!isLegacy){
+      if(raw.goals > raw.shotsOnTarget){ alert('Голов не может быть больше, чем бросков в створ. Проверь данные.'); return; }
+      if(raw.shotsOnTarget > raw.shotsTotal){ alert('Бросков в створ не может быть больше, чем бросков всего. Проверь данные.'); return; }
+      if((raw.dangerousShots||0) > raw.shotsTotal){ alert('Бросков из опасной зоны не может быть больше, чем бросков всего. Проверь данные.'); return; }
+    }
+
+    const scoresheetEntry = Object.entries(buildScoresheetFromEntries());
+
+    // Legacy edit protection: allow correcting metadata/raw stats without rewriting historical XP/rating through v2.
+    if(isLegacy){
+      Object.assign(editedGame, {date, opponent, matchType, raw, scoresheet:scoresheetEntry});
+      data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+      const changes = reconcileMatchStreakRewards();
+      editingGameId = null;
+      saveData(); renderPlayer(); renderGame();
+      const samChange = changes.some(c=>c.type==='sam-add') ? '\n🔥 Пересчитана серия ≥8.0 и начислены Sam.' : '';
+      alert(`Старый матч обновлён. Его исторические XP и оценка не пересчитаны.${samChange}`);
+      return;
+    }
 
     const xpGained = {};
     Object.entries(XP_WEIGHTS).forEach(([attrKey, fields])=>{
       let xp = 0;
       Object.entries(fields).forEach(([fieldKey, weight])=>{
-        const v = raw[fieldKey];
+        const v = Number(raw[fieldKey])||0;
         xp += SUBJECTIVE_FIELDS.has(fieldKey) ? (v-5)*weight : v*weight;
       });
       xpGained[attrKey] = xp;
     });
 
-    // Derived penalty: shots on target that did NOT become a goal — the honest fix
-    // for "shoots a lot, never scores" without inventing a fake xG input field.
-    const unconverted = Math.max(0, raw.shotsOnTarget - raw.goals);
-    const conversionPenalty = -unconverted * SHOT_CONVERSION_PENALTY;
-    xpGained.shooting += conversionPenalty;
+    // Quality-over-volume shooting: every shot outside the dangerous area slightly offsets raw volume.
+    const lowDangerShots = Math.max(0, (raw.shotsTotal||0) - (raw.dangerousShots||0));
+    xpGained.shooting -= lowDangerShots * LOW_DANGER_SHOT_PENALTY;
 
-    let editedGame = null;
-    if(editingGameId){
-      editedGame = data.games.find(g=>g.id===editingGameId);
-      if(editedGame && !editedGame.missed && editedGame.xpGained){
-        // reverse the old effects before applying the new ones
-        Object.entries(editedGame.xpGained).forEach(([attr,xp])=> applyXp(attr, -xp));
-        if(editedGame.hotStreakBonusAwarded) Object.keys(data.player.attributes).forEach(k=>applyXp(k, -HOT_STREAK_BONUS));
-      }
+    if(editedGame && !editedGame.missed && editedGame.xpGained){
+      // Reverse only base match XP here. Streak bonuses are reconciled separately below.
+      Object.entries(editedGame.xpGained).forEach(([attr,xp])=> applyXp(attr, -xp));
     }
     Object.entries(xpGained).forEach(([attr,xp])=> applyXp(attr, xp));
 
-    const totalXp = Object.values(xpGained).reduce((s,v)=>s+v,0);
+    const totalXp = Object.values(xpGained).reduce((sum,v)=>sum+v,0);
     const matchRating = Math.max(1, Math.min(10, MATCH_RATING_BASE + totalXp*MATCH_RATING_SCALE));
-
-    recordOvrSnapshot(date);
-    const scoresheetEntry = Object.entries(buildScoresheetFromEntries());
-
-    // hot-streak bonus: every HOT_STREAK_LEN consecutive played games rated >= threshold
-    // (computed against the games list as it will look AFTER this save)
-    const futureGames = editedGame
-      ? data.games.map(g=> g.id===editingGameId ? {...g, missed:false, matchRating} : g)
-      : [...data.games, {missed:false, matchRating}];
-    const played = futureGames.filter(g=>!g.missed);
-    let streakLen = 0;
-    for(let i=played.length-1; i>=0; i--){
-      if(played[i].matchRating >= HOT_STREAK_THRESHOLD) streakLen++; else break;
-    }
-    let bonusMsg = '', hotStreakBonusAwarded = false;
-    if(streakLen>0 && streakLen % HOT_STREAK_LEN === 0){
-      Object.keys(data.player.attributes).forEach(k=>applyXp(k, HOT_STREAK_BONUS));
-      bonusMsg = `\n🔥 Серия из ${streakLen} игр с оценкой ≥${HOT_STREAK_THRESHOLD} — бонус +${HOT_STREAK_BONUS} XP во все навыки!`;
-      hotStreakBonusAwarded = true;
-    }
+    const gameId = editedGame ? editedGame.id : uid();
 
     if(editedGame){
-      Object.assign(editedGame, {date, opponent, matchType, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
+      Object.assign(editedGame, {date, opponent, matchType, missed:false, raw, xpGained, matchRating, scoresheet:scoresheetEntry, matchSchemaVersion:MATCH_STATS_VERSION});
     } else {
-      data.games.push({id:uid(), date, opponent, matchType, missed:false, raw, xpGained, matchRating, ovrAfter: ovr(), scoresheet: scoresheetEntry, hotStreakBonusAwarded});
+      editedGame = {id:gameId, date, opponent, matchType, missed:false, raw, xpGained, matchRating, ovrAfter:ovr(), scoresheet:scoresheetEntry, matchSchemaVersion:MATCH_STATS_VERSION};
+      data.games.push(editedGame);
     }
     data.games.sort((a,b)=> new Date(a.date)-new Date(b.date));
+
+    const streakChanges = reconcileMatchStreakRewards();
+    editedGame.ovrAfter = ovr();
+    recordOvrSnapshot(date);
     editingGameId = null;
+
+    const targetChanges = streakChanges.filter(c=>c.gameId===gameId);
+    let bonusMsg = '';
+    if(targetChanges.some(c=>c.type==='xp-add')) bonusMsg += `\n🔥 Серия ≥${HOT_STREAK_THRESHOLD}: +${HOT_STREAK_BONUS} XP в игровые навыки (без физподготовки)!`;
+    if(targetChanges.some(c=>c.type==='sam-add')) bonusMsg += `\n🔥 3 отличных матча подряд! Серия ≥${SAM_STREAK_THRESHOLD} — +${SAM_STREAK_BONUS} Sam.`;
 
     saveData();
     renderPlayer();
@@ -1484,12 +1570,12 @@ function renderGameHistory(){
     if(g.missed){
       return `<li><span>${g.date} · ${g.opponent}<br><span class="muted">🩹 пропущено — травма/болезнь</span></span><span class="pill">не считается</span></li>`;
     }
-    const chips = Object.entries(g.xpGained).map(([k,v])=>{
+    const chips = Object.entries(g.xpGained||{}).map(([k,v])=>{
       const sign = v>=0?'+':'';
       const color = v>=0 ? 'var(--pos)' : 'var(--neg)';
       return `<span class="pill" style="color:${color}">${icon(k)} ${sign}${v.toFixed(1)}</span>`;
     }).join(' ');
-    const sheet = (g.scoresheet||[]).map(([n,s])=>`${n}: ${s.goals}Г ${s.assists}П ${s.plusMinus>=0?'+':''}${s.plusMinus} ${s.penalties}Штр`).join(', ');
+    const sheet = (g.scoresheet||[]).map(([n,s])=>`${n}: ${s.goals||0}Г ${s.assists||0}П ${s.penalties||0}Штр`).join(', ');
     return `<li><span>${g.date} · ${g.opponent}<br><span class="muted">${chips}</span>${sheet?`<br><span class="muted">${sheet}</span>`:''}</span><span class="pill">Оценка ${g.matchRating.toFixed(1)}</span></li>`;
   }).join('');
   wrap.innerHTML = `<div class="card"><h2>Последние 5 игр</h2><ul class="list">${rows}</ul><p class="muted" style="margin-top:8px;">Полная статистика и редактирование — во вкладке «Матчи».</p></div>`;
@@ -1569,11 +1655,20 @@ async function deleteGame(gameId){
   const g = data.games[idx];
   if(!g.missed && g.xpGained){
     Object.entries(g.xpGained).forEach(([attr,xp])=> applyXp(attr, -xp));
-    if(g.hotStreakBonusAwarded) Object.keys(data.player.attributes).forEach(k=>applyXp(k, -HOT_STREAK_BONUS));
+    if(g.hotStreakBonusAwarded){
+      if(g.hotStreakBonusVersion===MATCH_STATS_VERSION) MATCH_SKILL_ATTRS.forEach(k=>applyXp(k, -HOT_STREAK_BONUS));
+      else Object.keys(data.player.attributes).forEach(k=>applyXp(k, -HOT_STREAK_BONUS)); // legacy historical behavior
+    }
+    const samBonus = Number(g.samStreakBonusAwarded)||0;
+    if(samBonus>0){
+      data.samBalance -= samBonus;
+      data.samLedger.push({date:todayStr(), delta:-samBonus, reason:`Удалён матч — отмена серии ≥${SAM_STREAK_THRESHOLD}`, gameId:g.id, kind:'matchStreak8-reversal'});
+    }
   }
   data.bonusLedger = data.bonusLedger.filter(b=> b.gameId !== gameId);
   data.games.splice(idx,1);
-  recordOvrSnapshot(todayStr()); // refresh current OVR snapshot; past months' snapshots are left as historical record
+  reconcileMatchStreakRewards(); // a deleted/edited game can shift later 3/6/9-game bonuses
+  recordOvrSnapshot(todayStr());
   saveData();
   renderAll();
 }
@@ -1589,9 +1684,10 @@ function renderTeam(){
     const agg = {};
     data.games.forEach(g=>{
       (g.scoresheet||[]).forEach(([name,s])=>{
-        if(!agg[name]) agg[name] = {goals:0, assists:0, plusMinus:0, penalties:0};
-        agg[name].goals += s.goals; agg[name].assists += s.assists;
-        agg[name].plusMinus += s.plusMinus; agg[name].penalties += s.penalties;
+        if(!agg[name]) agg[name] = {goals:0, assists:0, penalties:0};
+        agg[name].goals += s.goals||0;
+        agg[name].assists += s.assists||0;
+        agg[name].penalties += s.penalties||0;
       });
     });
     const rows = Object.entries(agg).sort((a,b)=>b[1].goals-a[1].goals);
@@ -1604,10 +1700,10 @@ function renderTeam(){
         <h2 style="margin-top:14px;">Статистика команды (из внесённых матчей)</h2>
         <div class="chart-wrap">
           <table>
-            <thead><tr><th>Игрок</th><th>Голы</th><th>Передачи</th><th>+/-</th><th>Штрафы</th></tr></thead>
+            <thead><tr><th>Игрок</th><th>Голы</th><th>Передачи</th><th>Штрафы</th></tr></thead>
             <tbody>
-              ${rows.length===0 ? `<tr><td colspan="5" class="empty">Пока нет данных — вноси статы одноклубников во вкладке «Внести игру»</td></tr>` : rows.map(([name,s])=>`
-                <tr><td>${name}</td><td>${s.goals}</td><td>${s.assists}</td><td style="color:${s.plusMinus>=0?'var(--pos)':'var(--neg)'}">${s.plusMinus>=0?'+':''}${s.plusMinus}</td><td>${s.penalties}</td></tr>
+              ${rows.length===0 ? `<tr><td colspan="4" class="empty">Пока нет данных — вноси статы одноклубников во вкладке «Внести игру»</td></tr>` : rows.map(([name,s])=>`
+                <tr><td>${name}</td><td>${s.goals}</td><td>${s.assists}</td><td>${s.penalties}</td></tr>
               `).join('')}
             </tbody>
           </table>
