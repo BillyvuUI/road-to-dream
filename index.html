@@ -389,7 +389,7 @@ const XP_WEIGHTS = {
   skating:    { speedAdvantage:1.0, speedCatchup:0.8, lostPureSpeed:-0.8 },
   dribbling:  { successfulDekes:1.5, failedDekes:-1.2, controlledEntries:0.8 },
   shooting:   { goals:4, shotsOnTarget:0.2, shotsTotal:0, dangerousShots:0.8 },
-  iq:         { assists:2.5, turnovers:-2.0, decisions:0.5, lateReturns:-1.0, chancesCreated:0.8, controlledExits:0.7 },
+  iq:         { assists:2.5, turnovers:-0.75, decisions:0.5, lateReturns:-1.0, chancesCreated:0.8, controlledExits:0.7 },
   battle:     { duelsWon:1.5, duelsLost:-1.2, takeaways:1, penalties:-0.8, successfulForechecks:0.8 },
 };
 const SUBJECTIVE_FIELDS = new Set(['decisions']); // only field graded 1-10 rather than counted
@@ -1347,7 +1347,7 @@ function renderGame(){
         <div class="row">
           <div class="field"><label class="f">Голевые передачи</label><input type="number" min="0" id="f-assists" value="0"></div>
           <div class="field"><label class="f">Потери шайбы</label><input type="number" min="0" id="f-turnovers" value="0"></div>
-          <div class="field"><label class="f">Принятие решений (1–10)</label><input type="number" min="1" max="10" id="f-decisions" value="5"></div>
+          <div class="field"><label class="f">Принятие решений (1–10)</label><input type="number" min="1" max="10" id="f-decisions" value="5">${help('Оцени общую игру головой: выбор позиции, открывания, решения с шайбой и без неё, своевременность действий.')}</div>
         </div>
         <div class="row">
           <div class="field"><label class="f">Не успел вернуться в оборону</label><input type="number" min="0" id="f-lateReturns" value="0"></div>
