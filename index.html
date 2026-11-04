@@ -1162,8 +1162,8 @@ function renderPlayer(){
     </div>
     <div class="card">
       ${attrs.map(a=>{
-        const lastGame = data.games[data.games.length-1];
-        const lastDelta = lastGame ? lastGame.xpGained[a.key] : null;
+        const lastPlayedGame = played[played.length-1];
+        const lastDelta = lastPlayedGame?.xpGained?.[a.key] ?? null;
         const deltaTag = (lastDelta!==null && Math.abs(lastDelta)>=0.05)
           ? `<span style="color:${lastDelta>0?'var(--pos)':'var(--neg)'}; font-size:11px; margin-left:6px;">${lastDelta>0?'+':''}${lastDelta.toFixed(1)}</span>` : '';
         const subs = computeAttrSubAverages(a.key);
