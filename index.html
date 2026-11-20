@@ -396,10 +396,28 @@ const SUBJECTIVE_FIELDS = new Set(['decisions']); // only field graded 1-10 rath
 const LOW_DANGER_SHOT_PENALTY = 0.2; // every shot outside the dangerous area slightly offsets empty shot volume
 const MATCH_SKILL_ATTRS = ['skating','dribbling','shooting','iq','battle']; // fitness never grows from matches
 
-// Single-match rating (Flashscore-style) — fast per-game signal, separate from
-// the slow attribute XP. base + scaled sum of this game's total XP across attrs.
+// Match Rating v1: an independent measure of match quality.
+// These coefficients are intentionally separate from XP_WEIGHTS.
 const MATCH_RATING_BASE = 6.0;
 const MATCH_RATING_SCALE = 0.15;
+const MATCH_RATING_WEIGHTS = {
+  skating:    { speedAdvantage:0.80, speedCatchup:0.50, lostPureSpeed:-0.65 },
+  dribbling:  { successfulDekes:1.00, failedDekes:-0.80, controlledEntries:0.50 },
+  shooting:   { goals:2.50, shotsOnTarget:0.20, shotsTotal:0, dangerousShots:0.45 },
+  iq:         { assists:1.50, turnovers:-1.00, lateReturns:-0.70, chancesCreated:0.50, controlledExits:0.40 },
+  battle:     { duelsWon:0.80, duelsLost:-0.65, takeaways:0.60, penalties:-0.70, successfulForechecks:0.40 },
+};
+function calculateMatchScore(raw){
+  const value = key => Number(raw[key])||0;
+  let score = 0;
+  Object.values(MATCH_RATING_WEIGHTS).forEach(fields=>{
+    Object.entries(fields).forEach(([key,weight])=>{ score += value(key)*weight; });
+  });
+  score += (value('decisions')-5)*0.30;
+  const lowDangerShots = Math.max(0, value('shotsTotal')-value('dangerousShots'));
+  score -= lowDangerShots*0.15;
+  return score;
+}
 // Hot-streak bonus: every N consecutive played (non-missed) games rated >= threshold
 // grants a one-off XP bonus to every attribute.
 const HOT_STREAK_LEN = 3;
@@ -1533,8 +1551,8 @@ function renderGame(){
     }
     Object.entries(xpGained).forEach(([attr,xp])=> applyXp(attr, xp));
 
-    const totalXp = Object.values(xpGained).reduce((sum,v)=>sum+v,0);
-    const matchRating = Math.max(1, Math.min(10, MATCH_RATING_BASE + totalXp*MATCH_RATING_SCALE));
+    const matchScore = calculateMatchScore(raw);
+    const matchRating = Math.max(1, Math.min(10, MATCH_RATING_BASE + matchScore*MATCH_RATING_SCALE));
     const gameId = editedGame ? editedGame.id : uid();
 
     if(editedGame){
