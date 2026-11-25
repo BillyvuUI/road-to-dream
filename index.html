@@ -390,7 +390,7 @@ const XP_WEIGHTS = {
   dribbling:  { successfulDekes:1.5, failedDekes:-1.2, controlledEntries:0.8 },
   shooting:   { goals:4, shotsOnTarget:0.2, shotsTotal:0, dangerousShots:0.8 },
   iq:         { assists:2.5, turnovers:-0.75, decisions:0.5, lateReturns:-1.0, chancesCreated:0.8, controlledExits:0.7 },
-  battle:     { duelsWon:1.5, duelsLost:-1.2, takeaways:1, penalties:-0.8, successfulForechecks:0.8 },
+  battle:     { duelsWon:1.5, duelsLost:-1.2, takeaways:1, penalties:-0.8, successfulForechecks:0.8, blockedShots:1.0 },
 };
 const SUBJECTIVE_FIELDS = new Set(['decisions']); // only field graded 1-10 rather than counted
 const LOW_DANGER_SHOT_PENALTY = 0.2; // every shot outside the dangerous area slightly offsets empty shot volume
@@ -405,7 +405,7 @@ const MATCH_RATING_WEIGHTS = {
   dribbling:  { successfulDekes:1.00, failedDekes:-0.80, controlledEntries:0.50 },
   shooting:   { goals:2.50, shotsOnTarget:0.20, shotsTotal:0, dangerousShots:0.45 },
   iq:         { assists:1.50, turnovers:-1.00, lateReturns:-0.70, chancesCreated:0.50, controlledExits:0.40 },
-  battle:     { duelsWon:0.80, duelsLost:-0.65, takeaways:0.60, penalties:-0.70, successfulForechecks:0.40 },
+  battle:     { duelsWon:0.80, duelsLost:-0.65, takeaways:0.60, penalties:-0.70, successfulForechecks:0.40, blockedShots:0.40 },
 };
 function calculateMatchScore(raw){
   const value = key => Number(raw[key])||0;
@@ -715,6 +715,18 @@ async function runStartupMaintenance(){
     data.fixedMissingSamAmounts=true;
     needsSave=true;
   }
+  if(!data.migratedBlockedShotsXpV1){
+    // Backfill XP for blocked shots already recorded before this stat was connected to Battle XP.
+    data.games.filter(g=>!g.missed && g.raw && g.xpGained).forEach(g=>{
+      const blocked = Number(g.raw.blockedShots)||0;
+      if(blocked>0){
+        g.xpGained.battle = (Number(g.xpGained.battle)||0) + blocked*XP_WEIGHTS.battle.blockedShots;
+        applyXp('battle', blocked*XP_WEIGHTS.battle.blockedShots);
+      }
+    });
+    data.migratedBlockedShotsXpV1=true;
+    needsSave=true;
+  }
   if(!data.migratedTaskLogField){ data.migratedTaskLogField=true; needsSave=true; }
   const weeksChanged=settleWeeks();
   const periodsChanged=settlePeriods();
@@ -975,21 +987,48 @@ const SUB_LABELS = {
   goals:'Голы', shotsOnTarget:'Броски в створ', shotsTotal:'Броски всего', dangerousShots:'Броски из опасной зоны',
   assists:'Голевые передачи', turnovers:'Потери шайбы', decisions:'Принятие решений',
   lateReturns:'Не успел вернуться в оборону', chancesCreated:'Создал бросок партнёру', controlledExits:'Контролируемые выходы из зоны',
-  duelsWon:'Единоборства выиграно', duelsLost:'Единоборства проиграно', takeaways:'Отборы', penalties:'Штрафы', successfulForechecks:'Успешный форчек'
+  duelsWon:'Единоборства выиграно', duelsLost:'Единоборства проиграно', takeaways:'Отборы', penalties:'Штрафы', successfulForechecks:'Успешный форчек', blockedShots:'Заблокированные броски', lowDangerShotsPenalty:'Броски вне опасной зоны'
 };
 
-function computeAttrSubAverages(attrKey, lastN=5){
+function computeAttrRecentMatchAverages(attrKey){
+  if(!XP_WEIGHTS[attrKey]) return null;
+  const recent = data.games.filter(g=>!g.missed && g.raw).slice(-5);
+  return Object.keys(XP_WEIGHTS[attrKey]).map(field=>{
+    const tracked = recent.filter(g=>Object.prototype.hasOwnProperty.call(g.raw,field));
+    if(tracked.length===0) return null;
+    const total = tracked.reduce((sum,g)=>sum+(Number(g.raw[field])||0),0);
+    return {field, average:total/tracked.length, count:tracked.length};
+  }).filter(Boolean);
+}
+
+function computeAttrMatchXpContributions(attrKey){
   if(!XP_WEIGHTS[attrKey]) return null; // e.g. fitness — grows from training log, not match raw stats
-  const recent = data.games.filter(g=>!g.missed).slice(-lastN);
-  const fields = Object.keys(XP_WEIGHTS[attrKey]);
-  if(recent.length===0) return fields.map(f=>({field:f, avg:null, count:0}));
-  return fields.map(f=>{
-    // A missing field in a legacy match means "not tracked yet", not zero.
-    const tracked = recent.filter(g=>g.raw && Object.prototype.hasOwnProperty.call(g.raw,f));
-    if(tracked.length===0) return {field:f, avg:null, count:0};
-    const sum = tracked.reduce((acc,g)=> acc + (Number(g.raw[f])||0), 0);
-    return {field:f, avg: sum/tracked.length, count:tracked.length};
+  const played = data.games.filter(g=>!g.missed && g.raw);
+  const fields = Object.entries(XP_WEIGHTS[attrKey]).filter(([,weight])=>weight!==0);
+  const result = fields.map(([field,weight])=>{
+    const tracked = played.filter(g=>Object.prototype.hasOwnProperty.call(g.raw,field));
+    if(tracked.length===0) return {field, xp:null, count:0};
+    const xp = tracked.reduce((sum,g)=>{
+      const value = Number(g.raw[field])||0;
+      return sum + (SUBJECTIVE_FIELDS.has(field) ? (value-5)*weight : value*weight);
+    },0);
+    return {field, xp, count:tracked.length};
   });
+  // The low-danger shot penalty is a separate XP deduction, not a raw-stat weight.
+  if(attrKey==='shooting'){
+    const tracked = played.filter(g=>
+      Object.prototype.hasOwnProperty.call(g.raw,'shotsTotal') &&
+      Object.prototype.hasOwnProperty.call(g.raw,'dangerousShots')
+    );
+    if(tracked.length){
+      const xp = tracked.reduce((sum,g)=>{
+        const lowDanger = Math.max(0,(Number(g.raw.shotsTotal)||0)-(Number(g.raw.dangerousShots)||0));
+        return sum - lowDanger*LOW_DANGER_SHOT_PENALTY;
+      },0);
+      result.push({field:'lowDangerShotsPenalty',xp,count:tracked.length});
+    }
+  }
+  return result;
 }
 
 function computeTaskContributions(attrKey){
@@ -1184,14 +1223,26 @@ function renderPlayer(){
         const lastDelta = lastPlayedGame?.xpGained?.[a.key] ?? null;
         const deltaTag = (lastDelta!==null && Math.abs(lastDelta)>=0.05)
           ? `<span style="color:${lastDelta>0?'var(--pos)':'var(--neg)'}; font-size:11px; margin-left:6px;">${lastDelta>0?'+':''}${lastDelta.toFixed(1)}</span>` : '';
-        const subs = computeAttrSubAverages(a.key);
-        const matchHtml = subs===null
+        const recentAverages = computeAttrRecentMatchAverages(a.key);
+        const recentMatchHtml = recentAverages===null
           ? `<div class="muted">Этот навык не растёт от матчей.</div>`
-          : (subs.length && data.games.filter(g=>!g.missed).length>0 ? subs.map(s=>`
+          : (recentAverages.length ? recentAverages.map(s=>`
           <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
             <span class="muted" style="flex:2;">${SUB_LABELS[s.field]}</span>
-            <span style="font-family:'Oswald',sans-serif;">${s.avg===null?'—':s.avg.toFixed(1)}</span>
+            <span style="font-family:'Oswald',sans-serif;">${s.average.toFixed(1)}</span>
           </div>`).join('') : '<div class="empty">Пока нет игр</div>');
+        const subs = computeAttrMatchXpContributions(a.key);
+        const matchHtml = subs===null
+          ? `<div class="muted">Этот навык не растёт от матчей.</div>`
+          : (subs.length && data.games.filter(g=>!g.missed).length>0 ? subs.map(s=>{
+            const sign = s.xp===null ? '' : (s.xp>=0?'+':'');
+            const color = s.xp===null ? 'var(--muted)' : (s.xp>=0?'var(--pos)':'var(--neg)');
+            return `
+          <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
+            <span class="muted" style="flex:2;">${SUB_LABELS[s.field]}</span>
+            <span style="font-family:'Oswald',sans-serif; color:${color};">${s.xp===null?'—':`${sign}${s.xp.toFixed(1)} XP`}</span>
+          </div>`;
+          }).join('') : '<div class="empty">Пока нет игр</div>');
         const taskContrib = computeTaskContributions(a.key);
         const taskHtml = taskContrib.length===0 ? '<div class="empty">Нет заданий на этот навык</div>' : taskContrib.map(t=>`
           <div class="row" style="margin:0; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.05);">
@@ -1214,7 +1265,10 @@ function renderPlayer(){
           <div class="xp-bg"><div class="xp-fill" style="width:${Math.max(0,Math.min(100,a.xp/LEVEL_XP*100))}%"></div></div>
           ${parentUnlocked ? `<div class="muted" style="font-size:10px; margin-top:2px;">${a.xp.toFixed(1)} / ${LEVEL_XP} XP</div>` : ''}
           <div id="detail-${a.key}" style="display:none; margin-top:8px; padding:8px 10px; background:var(--panel-2); border-radius:8px;">
-            <div class="muted" style="margin-bottom:4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из матчей (последние 5; новые показатели — только где отслеживались)</div>
+            <div class="muted" style="margin-bottom:4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Статистика матчей</div>
+            <div class="muted" style="margin-bottom:4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Среднее количество действий за последние 5 матчей</div>
+            ${recentMatchHtml}
+            <div class="muted" style="margin:10px 0 4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Вклад матчей в прокачку за всё время</div>
             ${matchHtml}
             <div class="muted" style="margin:10px 0 4px; text-transform:uppercase; font-size:10px; letter-spacing:.5px; color:var(--gold);">Из заданий</div>
             ${taskHtml}
@@ -1387,6 +1441,7 @@ function renderGame(){
         </div>
         <div class="row">
           <div class="field"><label class="f">Успешный форчек</label><input type="number" min="0" id="f-successfulForechecks" value="0">${help('Давление Самира в чужой зоне привело к потере шайбы соперником, плохой передаче, вынужденному выбросу или возвращению владения нашей командой. Просто подъехал к игроку — не считается. Один эпизод форчека = максимум 1 отметка.')}</div>
+          <div class="field"><label class="f">Заблокированные броски</label><input type="number" min="0" id="f-blockedShots" value="0">${help('Бросок соперника, который Самир намеренно остановил собой или клюшкой до того, как шайба дошла до ворот. Перехват передачи сюда не относится.')}</div>
         </div>
       </fieldset>
 
@@ -1410,10 +1465,10 @@ function renderGame(){
     <div id="game-history"></div>
   `;
 
-  const NEW_METRIC_FIELDS = new Set(['speedAdvantage','speedCatchup','lostPureSpeed','controlledEntries','dangerousShots','controlledExits','successfulForechecks']);
+  const NEW_METRIC_FIELDS = new Set(['speedAdvantage','speedCatchup','lostPureSpeed','controlledEntries','dangerousShots','controlledExits','successfulForechecks','blockedShots']);
   const FORM_FIELDS = ['speedAdvantage','speedCatchup','lostPureSpeed','successfulDekes','failedDekes','controlledEntries',
     'goals','shotsOnTarget','shotsTotal','dangerousShots','assists','turnovers','decisions','lateReturns','chancesCreated','controlledExits',
-    'duelsWon','duelsLost','takeaways','penalties','successfulForechecks'];
+    'duelsWon','duelsLost','takeaways','penalties','successfulForechecks','blockedShots'];
 
   if(editGame){
     document.getElementById('g-date').value = editGame.date;
